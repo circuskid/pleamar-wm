@@ -260,6 +260,9 @@ struct Window {
     /// The surfaces the render was last told about: one that appears again
     /// is sent whole, even if it has not drawn anything new.
     sent: Vec<u64>,
+    /// And where each of them was, at what size: a commit that changes none
+    /// of it and brings nothing new to show is not told to the scene.
+    told: Vec<(u64, (i32, i32), (u32, u32), (u32, u32), [f32; 4])>,
     /// The monitor it is on: which copy of the scene lays it out.
     screen: usize,
     /// Where the scene shows it: on which monitor, and its box there.
@@ -527,6 +530,14 @@ struct State {
     /// waited for a buffer its own monitor had not let go of yet: the program
     /// went at 60 on both. Windows (`None`) are drawn by the scene, as before.
     callbacks: Vec<(WlCallback, Option<usize>)>,
+    /// (`PLEAMAR_TIMING`) Since the last census: the windows' commits, the
+    /// ones with something new to show, and the frames told to the scene.
+    tally: [u32; 3],
+    /// A window's frame has been told to the scene and not painted yet: its
+    /// frame callbacks wait for that.
+    awaiting_paint: bool,
+    /// The last time the windows' frame callbacks were answered.
+    answered_at: Instant,
     to_render: Sender<ToRender>,
     handle: LoopHandle<'static, State>,
     /// Frames on the card (linux-dmabuf), once the render has said what it can read.
@@ -790,6 +801,9 @@ fn run(max: usize, to_render: Sender<ToRender>, rx: Channel<ToNest>, ready: std:
         pointer_on: None,
         dirty: Vec::new(),
         callbacks: Vec::new(),
+        tally: [0; 3],
+        awaiting_paint: false,
+        answered_at: Instant::now(),
         to_render,
         handle: event_loop.handle(),
         dmabuf: DmabufState::new(),
@@ -859,7 +873,10 @@ fn run(max: usize, to_render: Sender<ToRender>, rx: Channel<ToNest>, ready: std:
     let mut last_census = Instant::now();
     let mut last_trim = Instant::now();
     while !state.quit {
-        event_loop.dispatch(Some(Duration::from_millis(100)), &mut state).map_err(|e| e.to_string())?;
+        // A window waiting to be told of the next frame, with nothing of its
+        // own to be painted first: woken in time to tell it.
+        let wait = state.callbacks_due_in().map_or(Duration::from_millis(100), |d| d.min(Duration::from_millis(100)));
+        event_loop.dispatch(Some(wait), &mut state).map_err(|e| e.to_string())?;
         state.tell_held();
         state.popups.cleanup();
         state.prune_menus();
@@ -884,6 +901,9 @@ fn run(max: usize, to_render: Sender<ToRender>, rx: Channel<ToNest>, ready: std:
         }
         // `PLEAMAR_TIMING=1`: what the windows' side keeps, now and then.
         if pleamar::gpu::timing_enabled() && last_census.elapsed() > Duration::from_secs(10) {
+            let secs = last_census.elapsed().as_secs_f64();
+            let [commits, fresh, told] = std::mem::take(&mut state.tally).map(|n| n as f64 / secs);
+            println!("windows · {commits:.0} commits a second, {fresh:.0} with something new to show · {told:.0} windows' frames told to the scene");
             last_census = Instant::now();
             println!(
                 "windows · kept: {} windows, {} waiting, {} programs' buffers ({} lent), {} window listers ({} handles), {} pictures asked, {} keeping awake",
@@ -896,6 +916,9 @@ fn run(max: usize, to_render: Sender<ToRender>, rx: Channel<ToNest>, ready: std:
                 state.pictures.len(),
                 state.inhibitors.len()
             );
+        }
+        if state.callbacks_due_in().is_some_and(|d| d.is_zero()) {
+            state.frame_done(None);
         }
         if last_done.elapsed() > Duration::from_millis(250) && !state.callbacks.is_empty() {
             state.frame_done_all();
@@ -2173,6 +2196,10 @@ impl State {
     /// windows may draw again, and the programs' surfaces on that monitor.
     fn frame_done(&mut self, monitor: Option<usize>) {
         let t = self.time();
+        self.answered_at = Instant::now();
+        if monitor.is_none() {
+            self.awaiting_paint = false;
+        }
         self.callbacks.retain(|(cb, on)| {
             let now = on.is_none() || *on == monitor;
             if now {
@@ -2183,9 +2210,23 @@ impl State {
         self.presentation_done();
     }
 
+    /// How long the windows' frame callbacks still wait when nothing of
+    /// theirs is being painted: until a refresh of the fastest monitor has
+    /// gone by since they were last answered. `None`: there are none, or they
+    /// wait for the scene to paint what it was told.
+    fn callbacks_due_in(&self) -> Option<Duration> {
+        if self.awaiting_paint || !self.callbacks.iter().any(|(_, on)| on.is_none()) {
+            return None;
+        }
+        let mhz = self.outputs.iter().filter_map(|o| o.current_mode()).map(|m| m.refresh).max().unwrap_or(60_000).max(1_000);
+        Some(Duration::from_nanos(1_000_000_000_000 / mhz as u64).saturating_sub(self.answered_at.elapsed()))
+    }
+
     /// All of them: nothing has been shown for a while (see the loop).
     fn frame_done_all(&mut self) {
         let t = self.time();
+        self.answered_at = Instant::now();
+        self.awaiting_paint = false;
         for (cb, _) in self.callbacks.drain(..) {
             cb.done(t);
         }
@@ -2254,7 +2295,7 @@ impl State {
         }
         self.outputs[screen.min(self.outputs.len() - 1)].enter(&surface);
         let listed = self.toplevel_list.new_toplevel::<State>(title.clone(), app.clone());
-        self.slots[slot] = Some(Window { toplevel, surface, title: title.clone(), app: app.clone(), geometry: [0, 0, 0, 0], sent: Vec::new(), screen, shown: None, listed, fullscreen: false, dialog: false, floating: false, ruled: None, minimized: false, was_at: 0, floated: false, home: None });
+        self.slots[slot] = Some(Window { toplevel, surface, title: title.clone(), app: app.clone(), geometry: [0, 0, 0, 0], sent: Vec::new(), told: Vec::new(), screen, shown: None, listed, fullscreen: false, dialog: false, floating: false, ruled: None, minimized: false, was_at: 0, floated: false, home: None });
         self.order.push(slot);
         layers::set_private(slot, false);
         let program = (!app.is_empty()).then(|| crate::desktop::program(&app));
@@ -2477,9 +2518,18 @@ impl State {
                     pieces_of(&surface, at, &sent, &mut pieces);
                 }
             }
+            // Nothing new to show, and everything where it was: a commit only
+            // to be told of the next frame (a page whose frame loop changes
+            // nothing does it at the monitor's pace). Told to the scene, each
+            // one was a round and the whole monitor painted again, for nothing.
+            let layout: Vec<_> = pieces.iter().map(|p| (p.id, p.at, p.size, p.px, p.src)).collect();
+            let nothing_new = pieces.iter().all(|p| matches!(p.content, PieceContent::Kept));
+            let mut same = false;
             if let Some(Some(win)) = self.slots.get_mut(slot) {
+                same = nothing_new && win.geometry == g && win.told == layout;
                 win.geometry = g;
                 win.sent = pieces.iter().map(|p| p.id).collect();
+                win.told = layout;
             }
             if std::env::var_os("PLEAMAR_DEBUG_PIECES").is_some() {
                 let what: Vec<String> = pieces
@@ -2495,6 +2545,11 @@ impl State {
                     .collect();
                 eprintln!("windows · slot {slot} {g:?}: {}", what.join(" | "));
             }
+            if same {
+                continue;
+            }
+            self.tally[2] += 1;
+            self.awaiting_paint = true;
             self.tell(NestEvent::Frame { slot, geometry: g, pieces });
         }
     }
@@ -2882,6 +2937,8 @@ impl CompositorHandler for State {
         self.callbacks.extend(callbacks.into_iter().map(|cb| (cb, on)));
         let feedback = with_states(surface, |s| std::mem::take(&mut s.cached_state.get::<PresentationFeedbackCachedState>().current().callbacks));
         let buffer_was_removed = matches!(buffer, Some(BufferAssignment::Removed));
+        self.tally[0] += 1;
+        self.tally[1] += matches!(buffer, Some(BufferAssignment::NewBuffer(_))) as u32;
         // Each surface has its number for the render the first time it shows something.
         if !with_states(surface, |s| s.data_map.get::<Mutex<Content>>().is_some()) {
             self.next_number += 1;
