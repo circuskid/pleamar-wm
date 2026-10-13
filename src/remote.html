@@ -937,8 +937,7 @@
   // shows the cards, sideways the next app. Two fingers zoom the picture (to
   // read something small), without touching home.
   const fingers = new Map();
-  let one = null, glide = null, zoom = { k: 1, x: 0, y: 0 }, pinch = null;
-  const NOTCH = 45;
+  let one = null, gliding = false, zoom = { k: 1, x: 0, y: 0 }, pinch = null;
   const edgeZone = () => innerHeight - 40;
   function ring(x, y, hold) {
     const d = document.createElement('div');
@@ -950,11 +949,20 @@
   function applyZoom() {
     stage.style.transform = zoom.k === 1 ? '' : 'translate(' + zoom.x + 'px,' + zoom.y + 'px) scale(' + zoom.k + ')';
   }
-  function stopGlide() { if (glide) { cancelAnimationFrame(glide.raf); glide = null; } }
-  function wheelBy(dx, dy) {
-    // Fingers up: what is under them goes up (the wheel downwards).
-    const nx = -dx / NOTCH, ny = -dy / NOTCH;
-    if (Math.abs(nx) > 0.001 || Math.abs(ny) > 0.001) hand('w ' + nx.toFixed(3) + ' ' + ny.toFixed(3));
+  // What is under the finger goes with it, to the pixel: home is told how far
+  // the finger went, in the desktop's own units (not notches of a wheel, which
+  // a program eases after, and never quite under the finger). Lifted while
+  // moving, home itself lets it go on, slowing down: `se`, how fast it went.
+  const units = () => { const m = monitors[phoneMon], r = picture(); return m && r.width ? m.w / r.width : 1; };
+  function stopGlide() { if (!gliding) return false; gliding = false; hand('sh'); return true; }
+  function scrollBy(dx, dy) {
+    const u = units();
+    if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) { one.scrolled = true; hand('s ' + (dx * u).toFixed(2) + ' ' + (dy * u).toFixed(2)); }
+  }
+  function scrollEnd(vx, vy) {
+    const u = units();
+    gliding = vx !== 0 || vy !== 0;
+    hand('se ' + (vx * u).toFixed(4) + ' ' + (vy * u).toFixed(4));
   }
   function statusTap(f) {
     // The right of the status line (where it says «pleamar»): this page's own menu.
@@ -970,12 +978,15 @@
   stage.addEventListener('pointerdown', (e) => {
     if (!finger(e) || !phoneWanted) return;
     e.preventDefault();
-    stopGlide();
+    // A finger put down on what was still going: it stops there, and that
+    // touch is not a click on whatever came to be under it.
+    const stopped = stopGlide();
     fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try { stage.setPointerCapture(e.pointerId); } catch (_) {}
     if (fingers.size === 2) {
       // A second finger: zooming, not touching home.
       if (one && one.held) hand('b 0 0');
+      if (one && one.scrolled) scrollEnd(0, 0);
       if (one) clearTimeout(one.timer);
       one = null;
       const [a, b] = [...fingers.values()];
@@ -984,7 +995,7 @@
     }
     if (fingers.size > 2) return;
     const f = at(e);
-    one = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, t0: performance.now(), f, moved: false, edge: e.clientY > edgeZone(), track: [], timer: null, held: false };
+    one = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, t0: performance.now(), f, moved: false, edge: e.clientY > edgeZone(), track: [], timer: null, held: false, stopped };
     hand('m ' + f.join(' '));
     // Held still, a little buzz: let go there, the right button (a menu);
     // moved from there, the left one held (to select, to drag).
@@ -1031,7 +1042,7 @@
         zoom.y = Math.min(0, Math.max(innerHeight - r.height, zoom.y));
         applyZoom();
       } else {
-        wheelBy(dx / zoom.k, dy / zoom.k);
+        scrollBy(dx, dy);
       }
       const now = performance.now();
       one.track.push({ t: now, x: e.clientX, y: e.clientY });
@@ -1057,6 +1068,7 @@
       return;
     }
     if (!o.moved) {
+      if (o.stopped) return;
       if (statusTap(o.f)) { openMenu(); return; }
       // A tap: where it was pressed (a finger wobbles a little).
       ring(o.x0, o.y0, false);
@@ -1066,25 +1078,17 @@
       return;
     }
     // Let go moving: it goes on by itself, slowing down (not the zoomed picture).
-    const tr = o.track;
+    if (!o.scrolled) return;
+    // (Held still before letting go, it stays where it was left.)
+    const tr = o.track, now = performance.now();
+    while (tr.length && now - tr[0].t > 90) tr.shift();
+    let vx = 0, vy = 0;
     if (tr.length > 1 && zoom.k <= 1.01) {
       const a = tr[0], b = tr[tr.length - 1], dt = Math.max(b.t - a.t, 1);
-      let vx = (b.x - a.x) / dt, vy = (b.y - a.y) / dt;
-      if (Math.hypot(vx, vy) > 0.25) {
-        let last = performance.now();
-        glide = { raf: 0 };
-        const step = (now) => {
-          if (!glide) return;
-          const dt = Math.min(now - last, 40); last = now;
-          wheelBy(vx * dt / zoom.k, vy * dt / zoom.k);
-          const f = Math.pow(0.9965, dt);
-          vx *= f; vy *= f;
-          if (Math.hypot(vx, vy) < 0.03) { glide = null; return; }
-          glide.raf = requestAnimationFrame(step);
-        };
-        glide.raf = requestAnimationFrame(step);
-      }
+      vx = (b.x - a.x) / dt; vy = (b.y - a.y) / dt;
+      if (Math.hypot(vx, vy) <= 0.25) vx = vy = 0;
     }
+    scrollEnd(vx, vy);
   };
   stage.addEventListener('pointerup', lift);
   stage.addEventListener('pointercancel', lift);

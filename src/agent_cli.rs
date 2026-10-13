@@ -65,18 +65,35 @@ fn socket() -> Option<String> {
 /// One line to the session's socket, as no agent in particular (its cursor's
 /// label is left as it is): the reply.
 pub(crate) fn tell(line: &str) -> Result<String, String> {
-    let path = socket().ok_or("no agent socket here")?;
-    let stream = UnixStream::connect(&path).map_err(|e| format!("{path}: {e}"))?;
-    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
-    let mut writer = stream.try_clone().map_err(|e| e.to_string())?;
-    let mut reader = BufReader::new(stream);
-    let mut reply = String::new();
-    for l in ["cua-inject v1", line] {
-        writeln!(writer, "{l}").map_err(|e| e.to_string())?;
-        reply.clear();
-        reader.read_line(&mut reply).map_err(|e| e.to_string())?;
+    Line::open()?.say(line)
+}
+
+/// The session's socket kept open, for what is said many times a second (a
+/// finger moving on a phone's glass): each line, and its reply.
+pub(crate) struct Line {
+    writer: UnixStream,
+    reader: BufReader<UnixStream>,
+}
+
+impl Line {
+    pub(crate) fn open() -> Result<Line, String> {
+        let path = socket().ok_or("no agent socket here")?;
+        let stream = UnixStream::connect(&path).map_err(|e| format!("{path}: {e}"))?;
+        let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
+        let writer = stream.try_clone().map_err(|e| e.to_string())?;
+        let mut line = Line { writer, reader: BufReader::new(stream) };
+        line.say("cua-inject v1")?;
+        Ok(line)
     }
-    Ok(reply.trim_end().to_owned())
+
+    pub(crate) fn say(&mut self, line: &str) -> Result<String, String> {
+        writeln!(self.writer, "{line}").map_err(|e| e.to_string())?;
+        let mut reply = String::new();
+        if self.reader.read_line(&mut reply).map_err(|e| e.to_string())? == 0 {
+            return Err("the session hung up".into());
+        }
+        Ok(reply.trim_end().to_owned())
+    }
 }
 
 // ── pleamar windows: asked and used by name ──────────────────────

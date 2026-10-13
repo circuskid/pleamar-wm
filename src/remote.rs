@@ -1397,7 +1397,7 @@ fn viewer(stream: TcpStream, token: String, from: String, gate: &Arc<Mutex<Gate>
                     Some(h) if !view_only => h,
                     _ => idle.insert(Hands::none()),
                 };
-                if matches!(verb, "m" | "b" | "w" | "k" | "paste" | "copy" | "mon" | "phone" | "unphone" | "g" | "type") {
+                if matches!(verb, "m" | "b" | "w" | "s" | "se" | "sh" | "k" | "paste" | "copy" | "mon" | "phone" | "unphone" | "g" | "type") {
                     used = Instant::now();
                 }
                 match (verb, &n[..]) {
@@ -1613,6 +1613,11 @@ fn viewer(stream: TcpStream, token: String, from: String, gate: &Arc<Mutex<Gate>
                     }
                     ("b", [b, d]) => h.button(*b as u32, *d != 0.0),
                     ("w", [dx, dy]) => h.wheel(*dx, *dy),
+                    // A finger on the phone's glass: so far, lifted at that
+                    // speed, down again.
+                    ("s", [x, y]) => h.finger(Finger::Moved(*x, *y)),
+                    ("se", [vx, vy]) => h.finger(Finger::Lifted(*vx, *vy)),
+                    ("sh", _) => h.finger(Finger::Halt),
                     ("k", [c, d]) => {
                         trace(&format!("key {c} {d}"));
                         h.key(*c as u16, *d != 0.0)
@@ -2060,6 +2065,89 @@ struct Hands {
     /// (`PLEAMAR_REMOTE_HANDS_TO`, its `PLEAMAR_HEADLESS_INPUT_FIFO`): to try
     /// the page without touching the real session's input.
     to: Option<std::fs::File>,
+    /// A phone's fingers moving what is under them: told to the session
+    /// itself (`fingers`), which no device here could say. And whether the
+    /// session refused them (an older one, still running): the wheel then.
+    fingers: Option<mpsc::Sender<Finger>>,
+    refused: Arc<std::sync::atomic::AtomicBool>,
+}
+
+/// What a finger on a phone's glass does to what is under it.
+enum Finger {
+    /// It went so far, in units of the desktop.
+    Moved(f64, f64),
+    /// Lifted, going that fast (units a millisecond): it goes on by itself.
+    Lifted(f64, f64),
+    /// Down again: what was going on by itself stops there.
+    Halt,
+}
+
+/// The phone's fingers, to the session down its socket (`F`): a program
+/// follows them to the pixel, as a touchpad's. Lifted while moving, what was
+/// under them goes on by itself, slowing down: from here, at this computer's
+/// own pace (from the phone, each step came when the network let it).
+fn fingers(from: mpsc::Receiver<Finger>, refused: Arc<std::sync::atomic::AtomicBool>) {
+    use std::sync::atomic::Ordering;
+    let mut line: Option<crate::agent_cli::Line> = None;
+    let mut say = |text: String| {
+        if line.is_none() {
+            line = crate::agent_cli::Line::open().ok();
+        }
+        match line.as_mut().map(|l| l.say(&text)) {
+            Some(Ok(reply)) => refused.store(reply.starts_with("err"), Ordering::Relaxed),
+            // Hung up (the session started again): asked again next time.
+            Some(Err(_)) => line = None,
+            None => refused.store(true, Ordering::Relaxed),
+        }
+    };
+    let mut glide: Option<(f64, f64, Instant)> = None;
+    loop {
+        let said = match glide {
+            Some(_) => match from.recv_timeout(Duration::from_millis(8)) {
+                Ok(f) => Some(f),
+                Err(mpsc::RecvTimeoutError::Timeout) => None,
+                Err(mpsc::RecvTimeoutError::Disconnected) => return,
+            },
+            None => match from.recv() {
+                Ok(f) => Some(f),
+                Err(_) => return,
+            },
+        };
+        match said {
+            Some(Finger::Moved(x, y)) => {
+                glide = None;
+                say(format!("F {x:.2} {y:.2}"));
+            }
+            Some(Finger::Lifted(vx, vy)) => {
+                if vx.hypot(vy) > 0.05 {
+                    glide = Some((vx, vy, Instant::now()));
+                } else {
+                    glide = None;
+                    say("F end".into());
+                }
+            }
+            Some(Finger::Halt) => {
+                if glide.take().is_some() {
+                    say("F end".into());
+                }
+            }
+            None => {
+                let Some((vx, vy, last)) = glide.as_mut() else { continue };
+                let ms = last.elapsed().as_secs_f64().min(0.04) * 1000.0;
+                *last = Instant::now();
+                let (x, y) = (*vx * ms, *vy * ms);
+                let slower = 0.9965f64.powf(ms);
+                *vx *= slower;
+                *vy *= slower;
+                let stopped = vx.hypot(*vy) < 0.03;
+                say(format!("F {x:.2} {y:.2}"));
+                if stopped {
+                    glide = None;
+                    say("F end".into());
+                }
+            }
+        }
+    }
 }
 
 impl Hands {
@@ -2067,7 +2155,7 @@ impl Hands {
         if let Ok(path) = std::env::var("PLEAMAR_REMOTE_HANDS_TO") {
             let to = std::fs::OpenOptions::new().write(true).open(&path).map_err(|e| format!("{path}: {e}"))?;
             println!("remote · the hands go down {path}, not to devices");
-            return Ok(Hands { to: Some(to), ..Hands::none() });
+            return Ok(Hands { to: Some(to), ..Hands::none() }.with_fingers());
         }
         // A pointer that says where it is (as a tablet, or a virtual
         // machine's mouse): over all of the desktop, 0…65535.
@@ -2097,12 +2185,20 @@ impl Hands {
         })?;
         // The session finds them a moment later.
         std::thread::sleep(Duration::from_millis(300));
-        Ok(Hands { pointer: Some(pointer), keyboard: Some(keyboard), held_keys: HashSet::new(), held_buttons: HashSet::new(), wheel: (0.0, 0.0), to: None })
+        Ok(Hands { pointer: Some(pointer), keyboard: Some(keyboard), ..Hands::none() }.with_fingers())
+    }
+
+    fn with_fingers(mut self) -> Hands {
+        let (tx, rx) = mpsc::channel();
+        let refused = self.refused.clone();
+        std::thread::spawn(move || fingers(rx, refused));
+        self.fingers = Some(tx);
+        self
     }
 
     /// Hands that do nothing: only watching.
     fn none() -> Hands {
-        Hands { pointer: None, keyboard: None, held_keys: HashSet::new(), held_buttons: HashSet::new(), wheel: (0.0, 0.0), to: None }
+        Hands { pointer: None, keyboard: None, held_keys: HashSet::new(), held_buttons: HashSet::new(), wheel: (0.0, 0.0), to: None, fingers: None, refused: Default::default() }
     }
 
     /// A step down the pipe, when there is one instead of devices.
@@ -2191,6 +2287,21 @@ impl Hands {
         }
         if !events.is_empty() {
             self.press(true, &events);
+        }
+    }
+
+    /// A phone's finger: how far it went on the glass, in units (what is
+    /// under it goes the other way round, as Wayland counts it), lifted, or
+    /// down again. A session that does not know of fingers (an older one,
+    /// still running) is given the wheel, a notch every 50 units, as before.
+    fn finger(&mut self, f: Finger) {
+        let known = !self.refused.load(std::sync::atomic::Ordering::Relaxed);
+        match (self.fingers.clone(), f) {
+            (Some(to), Finger::Moved(x, y)) if known => drop(to.send(Finger::Moved(-x, -y))),
+            (Some(to), Finger::Lifted(x, y)) if known => drop(to.send(Finger::Lifted(-x, -y))),
+            (Some(to), Finger::Halt) if known => drop(to.send(Finger::Halt)),
+            (Some(_), Finger::Moved(x, y)) => self.wheel(-x / 50.0, -y / 50.0),
+            _ => {}
         }
     }
 

@@ -396,6 +396,19 @@ fn run(surfaces: Vec<Surface>, to_render: Sender<ToRender>) -> Result<(), String
             }
         })
         .map_err(|e| e.to_string())?;
+    // A phone's fingers on its glass (`pleamar-wm remote`): what is under the
+    // pointer moves with them, as with a touchpad's here.
+    let (fingers_tx, fingers_rx) = smithay::reexports::calloop::channel::channel::<layers::Fingers>();
+    layers::set_fingers_sink(Box::new(move |f| fingers_tx.send(f).is_ok()));
+    event_loop
+        .handle()
+        .insert_source(fingers_rx, |event, _, state: &mut State| {
+            if let smithay::reexports::calloop::channel::Event::Msg(f) = event {
+                state.last_input = std::time::Instant::now();
+                state.route.fingers(f);
+            }
+        })
+        .map_err(|e| e.to_string())?;
     // Idleness, looked at once a second.
     event_loop
         .handle()
@@ -1042,6 +1055,7 @@ impl State {
             }
             InputEvent::PointerAxis { event } => {
                 // A wheel in notches; a touchpad, a notch every 15 px of finger.
+                let fingers = matches!(event.source(), AxisSource::Finger | AxisSource::Continuous);
                 let notches = match (event.source(), event.amount_v120(Axis::Vertical), event.amount(Axis::Vertical)) {
                     (AxisSource::Wheel, Some(v), _) => -v / 120.0,
                     (_, _, Some(a)) => {
@@ -1052,9 +1066,6 @@ impl State {
                     }
                     _ => 0.0,
                 };
-                if notches != 0.0 {
-                    self.route.wheel(notches as f32);
-                }
                 let sideways = match (event.source(), event.amount_v120(Axis::Horizontal), event.amount(Axis::Horizontal)) {
                     (AxisSource::Wheel, Some(v), _) => -v / 120.0,
                     (_, _, Some(a)) => {
@@ -1065,8 +1076,23 @@ impl State {
                     }
                     _ => 0.0,
                 };
-                if sideways != 0.0 {
-                    self.route.wheel_sideways(sideways as f32);
+                if fingers {
+                    // Fingers: a program follows them as far as they went (the
+                    // scene, the same notches as ever); and, once they are
+                    // lifted (no way at all, said of each axis), it may go on.
+                    let (x, y) = (event.amount(Axis::Horizontal).unwrap_or(0.0), event.amount(Axis::Vertical).unwrap_or(0.0));
+                    if x != 0.0 || y != 0.0 {
+                        self.route.scroll(x, y, (notches + sideways) as f32);
+                    } else if event.source() == AxisSource::Finger {
+                        self.route.scroll_end();
+                    }
+                } else {
+                    if notches != 0.0 {
+                        self.route.wheel(notches as f32);
+                    }
+                    if sideways != 0.0 {
+                        self.route.wheel_sideways(sideways as f32);
+                    }
                 }
             }
             InputEvent::Keyboard { event } => self.key(event.key_code(), event.state() == KeyState::Pressed),

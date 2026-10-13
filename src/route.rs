@@ -175,6 +175,36 @@ impl Route {
         }
     }
 
+    /// Fingers moving what is under the pointer (a touchpad's two, one on a
+    /// phone's glass): to a program as far as they went, in units (down and to
+    /// the right, positive), and to the scene as the notches that is worth.
+    pub fn scroll(&self, x: f64, y: f64, notches: f32) {
+        if matches!(self.hit, Hit::Client(..)) {
+            layers::tell(ToLayers::Scroll(x, y));
+        } else {
+            let _ = self.to_render.send(ToRender::Scroll { x: x as f32, y: y as f32, notches });
+        }
+    }
+
+    /// The fingers lifted: what was moving may go on by itself.
+    pub fn scroll_end(&self) {
+        if matches!(self.hit, Hit::Client(..)) {
+            layers::tell(ToLayers::ScrollEnd);
+        } else {
+            let _ = self.to_render.send(ToRender::ScrollEnd);
+        }
+    }
+
+    /// Fingers from elsewhere (a phone's glass, through `pleamar-wm remote`).
+    /// The scene's own zones hear a notch every 50 units, as they did when
+    /// the phone's page counted them itself.
+    pub fn fingers(&self, f: layers::Fingers) {
+        match f {
+            layers::Fingers::Moved(x, y) => self.scroll(x, y, (-(x + y) / 50.0) as f32),
+            layers::Fingers::Up => self.scroll_end(),
+        }
+    }
+
     /// Where the keys go: a program's surface that takes all of it; else the
     /// one clicked that takes it on demand; else the scene.
     pub fn key_owner(&self, screens: &[Screen]) -> Option<u64> {

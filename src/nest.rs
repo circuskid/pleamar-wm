@@ -1069,6 +1069,29 @@ impl State {
                 p.axis(self, frame);
                 p.frame(self);
             }
+            // Fingers, not a wheel: as far as they went, and no notches. A
+            // program follows them to the pixel, and goes on by itself once
+            // they are lifted, if that is its way.
+            ToNest::Scroll(dx, dy) => {
+                use smithay::backend::input::{Axis, AxisSource};
+                let p = self.pointer.clone();
+                let mut frame = AxisFrame::new(time).source(AxisSource::Finger);
+                if dx != 0.0 {
+                    frame = frame.value(Axis::Horizontal, dx);
+                }
+                if dy != 0.0 {
+                    frame = frame.value(Axis::Vertical, dy);
+                }
+                p.axis(self, frame);
+                p.frame(self);
+            }
+            ToNest::ScrollEnd => {
+                use smithay::backend::input::{Axis, AxisSource};
+                let p = self.pointer.clone();
+                let frame = AxisFrame::new(time).source(AxisSource::Finger).stop(Axis::Horizontal).stop(Axis::Vertical);
+                p.axis(self, frame);
+                p.frame(self);
+            }
             ToNest::Key { code, down } => {
                 // A key let go is only that: the keyboard hears it whoever has
                 // it now, and nobody's focus changes. Lost —no window had the
@@ -1904,6 +1927,8 @@ impl State {
                 p.frame(self);
             }
             ToLayers::Wheel(dy) => self.handle(ToNest::Wheel(dy as f64)),
+            ToLayers::Scroll(dx, dy) => self.handle(ToNest::Scroll(dx, dy)),
+            ToLayers::ScrollEnd => self.handle(ToNest::ScrollEnd),
             ToLayers::Key { id, code, down } => {
                 // Let go, as with a window: heard, whoever has the keyboard, and
                 // without taking it for a surface that may be gone.

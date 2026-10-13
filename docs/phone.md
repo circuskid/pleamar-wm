@@ -51,6 +51,7 @@ window manager and the shell are scenes.
 | Apps, cards, status line, gestures | `session.plm` | the phone's copy of the scene |
 | The curtain | `session.plm` | a surface over the real monitors, left out of captures |
 | Touch | `remote.html` | taps, holds, scrolls with momentum, swipes from the edges; the phone's keyboard types |
+| Scrolling | `remote.rs` (`fingers`), `route.rs` | what is under the finger moves with it to the pixel, up, down and sideways: the page says how far the finger went, and a program hears it as a touchpad's two fingers, not as a wheel's notches. Lifted while moving, home lets it go on, slowing down, at its own pace; a touch stops it |
 
 ## A tablet
 

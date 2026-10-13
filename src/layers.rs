@@ -41,6 +41,10 @@ pub enum ToLayers {
     /// A button (the evdev code) or the wheel, on the one under the pointer.
     Button { code: u32, down: bool },
     Wheel(f32),
+    /// Fingers moving what is under the pointer, so many units (down and to
+    /// the right, positive); and lifted.
+    Scroll(f64, f64),
+    ScrollEnd,
     /// A key for that one: it takes the keyboard if it did not have it.
     Key { id: u64, code: u32, down: bool },
     /// The keyboard goes back to the windows.
@@ -464,6 +468,27 @@ pub fn set_phone_sink(sink: PhoneSink) {
 /// (or headless), not pleamar-wm inside another compositor.
 pub fn request_phone(wish: Option<PhoneWish>) -> bool {
     PHONE.lock().unwrap().as_ref().is_some_and(|sink| sink(wish))
+}
+
+/// Fingers from elsewhere than a device here (a phone's glass, through
+/// `pleamar-wm remote`): how far they moved what is under the pointer, in
+/// units (down and to the right, positive), or that they were lifted.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Fingers {
+    Moved(f64, f64),
+    Up,
+}
+
+type FingersSink = Box<dyn Fn(Fingers) -> bool + Send>;
+static FINGERS: Mutex<Option<FingersSink>> = Mutex::new(None);
+
+pub fn set_fingers_sink(sink: FingersSink) {
+    *FINGERS.lock().unwrap() = Some(sink);
+}
+
+/// false: no session of our own to hand them to.
+pub fn fingers(f: Fingers) -> bool {
+    FINGERS.lock().unwrap().as_ref().is_some_and(|sink| sink(f))
 }
 
 /// The name a phone's monitor has, to tell it from the real ones.

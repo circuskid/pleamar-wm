@@ -329,6 +329,12 @@ impl pleamar::Platform for Headless {
             }
             crate::layers::set_pointer_picture(Some(std::sync::Arc::new((arrow, (0, 0)))));
             let route = Arc::new(Mutex::new(crate::route::Route::new(to_render.clone())));
+            // A phone's fingers, as the session's own would take them.
+            let theirs = route.clone();
+            crate::layers::set_fingers_sink(Box::new(move |f| {
+                theirs.lock().unwrap().fingers(f);
+                true
+            }));
             let hand = Hand { route, screens: screens.clone(), phone: phone.clone(), unit_w, scale };
             if let Some(script) = script {
                 let hand = hand.clone();
@@ -412,6 +418,14 @@ impl Hand {
             _ if what.starts_with("wheelx:") => {
                 if let Ok(n) = what[7..].parse::<f32>() {
                     route.wheel_sideways(n);
+                }
+            }
+            // `scroll:0,-40` fingers moving what is under the pointer 40 units
+            // up (as a phone's does); `scrollend`, lifted.
+            "scrollend" => route.fingers(crate::layers::Fingers::Up),
+            _ if what.starts_with("scroll:") => {
+                if let Some((Ok(x), Ok(y))) = what[7..].split_once(',').map(|(x, y)| (x.parse::<f64>(), y.parse::<f64>())) {
+                    route.fingers(crate::layers::Fingers::Moved(x, y));
                 }
             }
             // `wheel:-1` a notch down (as the session tells it: up is positive).

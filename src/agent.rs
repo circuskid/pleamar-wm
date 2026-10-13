@@ -37,6 +37,7 @@
 //! | `B PID W H IDX BUTTON PRESSED` | a button there |
 //! | `R MONITOR HEX` · `R off` | `pleamar-wm remote`: someone uses this desktop from elsewhere, looking at that monitor, from that address (hex encoded) — said again every few seconds while it lasts, and forgotten 15 s after the last |
 //! | `E phone_NAME` | a gesture on the phone: the scene's event of that name |
+//! | `F X Y` · `F end` | a finger on the phone's glass: what is under the pointer moves X, Y units (down and to the right, positive), as under a touchpad's fingers; and the finger lifted |
 //! | `U HEX` | text from the phone's keyboard (hex encoded), typed into the window with the keyboard as the person's own: no agent marks |
 //! | `P W H SCALE` · `P off` | `pleamar-wm remote` from a phone: a monitor of W × H pixels at that scale is put up for it (`PHONE-1`), or taken down (docs/phone.md) |
 //!
@@ -353,6 +354,26 @@ impl State {
                 let _ = self.to_render.send(ToRender::ExternalSignal(pleamar::scene::intern(name), None));
                 Ok("ok".to_owned())
             }
+            // A finger on the phone's glass moving what is under the pointer,
+            // so many units (down and to the right, positive), and lifted: the
+            // person's own, as their touchpad's would be.
+            ["F", "end"] => {
+                if layers::fingers(layers::Fingers::Up) {
+                    Ok("ok".to_owned())
+                } else {
+                    Err("no-session")
+                }
+            }
+            ["F", x, y] => match (x.parse::<f64>(), y.parse::<f64>()) {
+                (Ok(x), Ok(y)) if x.is_finite() && y.is_finite() && x.abs() <= 4096.0 && y.abs() <= 4096.0 => {
+                    if layers::fingers(layers::Fingers::Moved(x, y)) {
+                        Ok("ok".to_owned())
+                    } else {
+                        Err("no-session")
+                    }
+                }
+                _ => Err("bad-args"),
+            },
             // A phone asks for a monitor of its own, and lets it go.
             ["P", "off"] => {
                 if layers::request_phone(None) {
