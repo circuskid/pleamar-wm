@@ -144,7 +144,7 @@
     <span id="monitors"></span>
     <span class="sep"></span>
     <button id="full" title="Full screen: Windows, Alt+Tab and the rest go home too">Full screen</button>
-    <button id="super" title="Tap the Super key at home">Super</button>
+    <button id="super" title="Hold Super at home for the next key: Super, then 1 or Tab. Again, to let it go">Super</button>
     <button id="pastebtn" title="Your clipboard here into the one at home, then Ctrl+V">Paste here ↦</button>
     <button id="copybtn" title="The clipboard at home into yours">Copy home ↤</button>
     <span class="sep"></span>
@@ -737,6 +737,15 @@
   // clipboard along.
   let pasteThen = null;
   const down = new Set();
+  // «Super» on the bar holds it at home until the next key is let go: a
+  // browser keeps the Windows key for its own computer (unless full screen,
+  // and not every browser then), and the desktops, the overview and the rest
+  // are asked with it. Super, then 1; Super, then Tab; Super, then Ctrl+Up.
+  // Pressed again with no key in between, it is let go: a tap of it.
+  let superHeld = false;
+  const superBtn = document.getElementById('super');
+  const MODIFIERS = new Set([29, 97, 42, 54, 56, 100, 125, 126]);
+  const superUp = () => { if (!superHeld) return; superHeld = false; hand('k 125 0'); superBtn.classList.remove('on'); };
   // On an iPad's keyboard, ⌘ is what Ctrl is at home: ⌘C copies, ⌘T a tab.
   const codeOf = (e) => APPLE_TOUCH && PHONE && (e.code === 'MetaLeft' || e.code === 'MetaRight') ? (e.code === 'MetaLeft' ? 29 : 97) : CODES[e.code];
   // A keyboard of its own on a phone or a tablet: its keys go home as they
@@ -766,6 +775,8 @@
     e.preventDefault();
     if (!down.has(code)) return;
     down.delete(code); hand('k ' + code + ' 0');
+    // Super held from the bar goes with this key, and is let go with it.
+    if (superHeld && !MODIFIERS.has(code)) superUp();
     // Copying at home: bring it here too.
     if ((e.ctrlKey || (APPLE_TOUCH && e.metaKey)) && (e.code === 'KeyC' || e.code === 'KeyX')) setTimeout(() => send('copy'), 250);
   });
@@ -777,7 +788,7 @@
     pasteThen = tapV;
     send('paste ' + text);
   });
-  const releaseAll = () => { down.clear(); hand('rel'); };
+  const releaseAll = () => { down.clear(); hand('rel'); superHeld = false; superBtn.classList.remove('on'); };
   window.addEventListener('blur', releaseAll);
   // Hidden (another tab, minimized, a laptop closed): after a few seconds
   // the page lets go of home —no picture coming, not counted as someone
@@ -841,7 +852,11 @@
     document.getElementById('full').classList.toggle('on', !!document.fullscreenElement);
     if (!document.fullscreenElement && navigator.keyboard && navigator.keyboard.unlock) navigator.keyboard.unlock();
   });
-  document.getElementById('super').onclick = () => { hand('k 125 1'); hand('k 125 0'); keys.focus({ preventScroll: true }); };
+  superBtn.onclick = () => {
+    if (superHeld) superUp();
+    else { superHeld = true; hand('k 125 1'); superBtn.classList.add('on'); }
+    keys.focus({ preventScroll: true });
+  };
   document.getElementById('pastebtn').onclick = async () => {
     try {
       const text = await navigator.clipboard.readText();
