@@ -7628,7 +7628,7 @@ scene Session {
     let r.r = 23
     // Where Marea lives, as seen from the desktop: the island, just above the top edge.
     let r.isl = if(island.screen >= 0, island.screen, max(pick(max(rider, 0), win.0.screen, win.1.screen, win.2.screen, win.3.screen, win.4.screen, win.5.screen, win.6.screen, win.7.screen, win.8.screen, win.9.screen, win.10.screen, win.11.screen, win.12.screen, win.13.screen, win.14.screen, win.15.screen), 0))
-    let home.rx = pick(r.isl, mx.0, mx.1, mx.2, mx.3) + pick(r.isl, screen.0.width, screen.1.width, screen.2.width, screen.3.width) / 2 - 50
+    let home.rx = pick(r.isl, mx.0, mx.1, mx.2, mx.3) + pick(r.isl, screen.0.width, screen.1.width, screen.2.width, screen.3.width) / 2
     let home.ry = -40
     on ride while win.focus >= 0 and not riding {
         riding = true
