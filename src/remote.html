@@ -493,11 +493,16 @@
   // When the decoder failed lately on the channel (more than a few in a while,
   // and it is let be: the video track instead).
   let failed = [];
+  // The last frame handed to the decoder: told home as arrived if the decoder
+  // fails on it (it did arrive: the way is not what failed).
+  let lastSeq = 0;
   function newDecoder() {
     if (decoder) { try { decoder.close(); } catch (_) {} }
     configured = false; needKey = true;
-    decoder = new VideoDecoder({
+    const mine = decoder = new VideoDecoder({
       output: (f) => {
+        // (One closed a moment ago may still hand a frame over: not shown.)
+        if (decoder !== mine) { f.close(); return; }
         seen.out++;
         if (dcVideo) seen.decodedHere++;
         // Shown: home measures the way (and this computer) with it (the socket's).
@@ -506,7 +511,13 @@
         ctx.drawImage(f, 0, 0); f.close(); frames++;
       },
       error: (e) => {
+        // A decoder already replaced says what it was doing failed: the one
+        // at work now is not to be thrown away for it.
+        if (decoder !== mine) { plog('an old decoder\'s error, let be: ' + e.name + ': ' + e.message); return; }
         seen.errors++;
+        // What it had did arrive: home is not to read this as a full way
+        // (and send less, with a whole frame each time, for nothing).
+        if (!dcVideo && lastSeq) send('got ' + lastSeq);
         plog('decoder error: ' + e.name + ': ' + e.message + ' · ' + seen.codec + ' · ' + (dcVideo ? 'channel' : isDirect ? 'track' : 'socket') + (document.hidden ? ' · hidden' : ''));
         // Hidden, the system takes the decoder away (not the frames' fault):
         // a new one with the next whole frame, when it is seen again.
@@ -556,6 +567,8 @@
     if (needKey && !key) {
       const now = performance.now();
       if (now - keyAsked > 500) { keyAsked = now; seen.keyAsked++; hand('full'); }
+      // (It came: only not shown.)
+      if (!dcVideo) send('got ' + seq);
       return;
     }
     seen.came++;
@@ -580,6 +593,7 @@
     // Hopelessly behind: start again from a whole frame (home slows down by itself before this).
     if (decoder.decodeQueueSize > 40) { plog('the decoder fell behind (' + decoder.decodeQueueSize + ' waiting)'); newDecoder(); hand('full'); return; }
     needKey = false;
+    lastSeq = seq;
     decoder.decode(new EncodedVideoChunk({ type: key ? 'key' : 'delta', timestamp: seq * 1000, data }));
   }
 

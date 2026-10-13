@@ -210,6 +210,22 @@ struct Encoder {
     name: &'static str,
     started: Instant,
     last_pts: i64,
+    /// The stream's parameters (its SPS) as first written: kept in every
+    /// whole frame after, whatever the bitrate (`same_parameters`).
+    sps: Option<Vec<u8>>,
+}
+
+/// Where a whole frame's parameters (its SPS NAL, without the start code)
+/// are in it.
+fn sps_in(frame: &[u8]) -> Option<std::ops::Range<usize>> {
+    let starts: Vec<usize> = frame.windows(3).enumerate().filter(|(_, w)| *w == [0, 0, 1]).map(|(k, _)| k + 3).collect();
+    let k = starts.iter().position(|s| frame.get(*s).is_some_and(|b| b & 0x1f == 7))?;
+    let mut end = starts.get(k + 1).map_or(frame.len(), |next| next - 3);
+    // (The zeros before the next start code are its own.)
+    while end > starts[k] && frame[end - 1] == 0 {
+        end -= 1;
+    }
+    Some(starts[k]..end)
 }
 
 /// The encoders tried, in order, and what makes each answer at once.
@@ -274,7 +290,32 @@ impl Encoder {
                 (*yuv).format = ff::AVPixelFormat::AV_PIX_FMT_YUV420P as i32;
                 ff::av_frame_get_buffer(yuv, 0);
             }
-            Ok(Encoder { ctx, frame, packet: ff::av_packet_alloc(), sws, yuv, name, started: Instant::now(), last_pts: -1 })
+            Ok(Encoder { ctx, frame, packet: ff::av_packet_alloc(), sws, yuv, name, started: Instant::now(), last_pts: -1, sps: None })
+        }
+    }
+
+    /// A whole frame with the parameters this stream began with. The card's
+    /// encoder writes the bitrate into them (what a decoder may buffer, which
+    /// no decoder here needs), so each new bitrate made them new, and Safari
+    /// wants a decoder of its own for new ones: a decoder made again every few
+    /// seconds on a way that changes, and failing now and then. With the same
+    /// picture size and profile (their first bytes), they are the same stream.
+    fn same_parameters<'a>(&mut self, frame: &'a [u8]) -> std::borrow::Cow<'a, [u8]> {
+        let Some(at) = sps_in(frame) else { return frame.into() };
+        let now = &frame[at.clone()];
+        match &self.sps {
+            Some(first) if first[..] == *now => frame.into(),
+            Some(first) if first.len() >= 12 && now.len() >= 12 && first[..12] == now[..12] => {
+                let mut out = Vec::with_capacity(frame.len() + first.len());
+                out.extend_from_slice(&frame[..at.start]);
+                out.extend_from_slice(first);
+                out.extend_from_slice(&frame[at.end..]);
+                out.into()
+            }
+            _ => {
+                self.sps = Some(now.to_vec());
+                frame.into()
+            }
         }
     }
 
@@ -323,13 +364,15 @@ impl Encoder {
                 if r < 0 {
                     return Err(format!("encoding: {}", error(r)));
                 }
-                let p = &*self.packet;
-                let data = std::slice::from_raw_parts(p.data, p.size as usize);
-                let whole = p.flags & ff::AV_PKT_FLAG_KEY != 0;
+                let (data, whole) = {
+                    let p = &*self.packet;
+                    (std::slice::from_raw_parts(p.data, p.size as usize), p.flags & ff::AV_PKT_FLAG_KEY != 0)
+                };
+                let data = if whole { self.same_parameters(data) } else { data.into() };
                 let mut head = [0u8; 5];
                 head[..4].copy_from_slice(&(data.len() as u32).to_be_bytes());
                 head[4] = whole as u8;
-                let written = out.write_all(&head).and_then(|_| out.write_all(data)).and_then(|_| out.flush());
+                let written = out.write_all(&head).and_then(|_| out.write_all(&data)).and_then(|_| out.flush());
                 ff::av_packet_unref(self.packet);
                 written.map_err(|e| format!("out: {e}"))?;
             }
