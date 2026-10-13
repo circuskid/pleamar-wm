@@ -7635,7 +7635,7 @@ scene Session {
         homing = false
         falling = false
         rider = win.focus
-        from.x = pick(max(if(island.screen >= 0, island.screen, pick(win.focus, win.0.screen, win.1.screen, win.2.screen, win.3.screen, win.4.screen, win.5.screen, win.6.screen, win.7.screen, win.8.screen, win.9.screen, win.10.screen, win.11.screen, win.12.screen, win.13.screen, win.14.screen, win.15.screen)), 0), mx.0, mx.1, mx.2, mx.3) + pick(max(if(island.screen >= 0, island.screen, pick(win.focus, win.0.screen, win.1.screen, win.2.screen, win.3.screen, win.4.screen, win.5.screen, win.6.screen, win.7.screen, win.8.screen, win.9.screen, win.10.screen, win.11.screen, win.12.screen, win.13.screen, win.14.screen, win.15.screen)), 0), screen.0.width, screen.1.width, screen.2.width, screen.3.width) / 2 - 50
+        from.x = pick(max(if(island.screen >= 0, island.screen, pick(win.focus, win.0.screen, win.1.screen, win.2.screen, win.3.screen, win.4.screen, win.5.screen, win.6.screen, win.7.screen, win.8.screen, win.9.screen, win.10.screen, win.11.screen, win.12.screen, win.13.screen, win.14.screen, win.15.screen)), 0), mx.0, mx.1, mx.2, mx.3) + pick(max(if(island.screen >= 0, island.screen, pick(win.focus, win.0.screen, win.1.screen, win.2.screen, win.3.screen, win.4.screen, win.5.screen, win.6.screen, win.7.screen, win.8.screen, win.9.screen, win.10.screen, win.11.screen, win.12.screen, win.13.screen, win.14.screen, win.15.screen)), 0), screen.0.width, screen.1.width, screen.2.width, screen.3.width) / 2
         from.y = -40
         hop: 0 ~0ms
         hop: 1 ~800ms after 16ms
