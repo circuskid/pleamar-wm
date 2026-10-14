@@ -52,6 +52,9 @@ pub enum ToLayers {
     /// A monitor (by its name) was put together with what the programs on it
     /// had drawn: they may draw again.
     FrameDone(String),
+    /// A monitor's frame (by its name) reached the screen: its flip landed,
+    /// on a refresh. The windows on it may draw the next one.
+    Landed(String),
     /// Buffers a monitor no longer reads.
     Released(Vec<u64>),
     /// The monitors changed (one was plugged in or out): see `monitors()`.

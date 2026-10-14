@@ -72,11 +72,14 @@ impl Output for Offscreen {
                 Err(e) => eprintln!("headless · {e}"),
             }
         }
-        // The flip "lands" on the monitor's next refresh.
+        // The flip "lands" on the monitor's next refresh: on its beat, as a
+        // real one does, not a refresh after it was asked for.
         if let Some(sc) = self.screen.get().cloned() {
             let (tx, period) = (self.to_render.clone(), self.period);
+            let since = self.started.elapsed().as_nanos();
+            let wait = Duration::from_nanos((period.as_nanos() - since % period.as_nanos().max(1)) as u64);
             std::thread::spawn(move || {
-                std::thread::sleep(period);
+                std::thread::sleep(wait);
                 screen::landed(&sc, &tx);
             });
             return true;

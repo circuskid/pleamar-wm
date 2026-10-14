@@ -1303,7 +1303,10 @@ pub fn landed(screen: &Screen, to_render: &Sender<ToRender>) {
     for id in st.on_flip.drain(..) {
         let _ = to_render.send(ToRender::Frame(id));
     }
+    let name = st.name.clone();
     cv.notify_all();
+    drop(st);
+    layers::tell(ToLayers::Landed(name));
 }
 
 fn as_bytes(v: &[f32; 8]) -> &[u8] {

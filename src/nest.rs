@@ -149,6 +149,17 @@ struct Content {
 /// A program's window: a Wayland one (xdg-shell), or an X11 one (XWayland).
 /// Both are a surface of the compositor; they differ in how they are asked
 /// for a size, told they have the keyboard, or closed.
+/// What a program's frame callback waits for before it is told to draw again.
+#[derive(Clone, Copy, PartialEq)]
+enum Waits {
+    /// The scene to paint: a menu, anything that is not on a monitor of its own.
+    Scene,
+    /// Its monitor to show a frame: a program's own surface there (a bar,
+    /// Marea), or a window the scene lays out on it.
+    Panel(usize),
+    Window(usize),
+}
+
 #[derive(Clone, PartialEq)]
 enum Toplevel {
     Xdg(ToplevelSurface),
@@ -523,21 +534,30 @@ struct State {
     pointer_on: Option<usize>,
     /// The windows whose image has to be made again after this round.
     dirty: Vec<WlSurface>,
-    /// The programs' frame callbacks, and the monitor of the surface when it is
-    /// a program's own (a bar, Marea): that one is told only when its monitor
-    /// has shown it. Told by any monitor, a surface on a 60 Hz monitor was
-    /// asked for another frame at the pace of a 165 Hz one, and drawing it
-    /// waited for a buffer its own monitor had not let go of yet: the program
-    /// went at 60 on both. Windows (`None`) are drawn by the scene, as before.
-    callbacks: Vec<(WlCallback, Option<usize>)>,
+    /// The programs' frame callbacks, and what each waits for. A program's own
+    /// surface (a bar, Marea) is told when its monitor has shown a frame: told
+    /// by any monitor, a surface on a 60 Hz monitor was asked for another
+    /// frame at the pace of a 165 Hz one, and drawing it waited for a buffer
+    /// its own monitor had not let go of yet: the program went at 60 on both.
+    /// A window is told on its monitor's refresh, when a frame there reaches
+    /// the screen (`Landed`): told whenever the scene painted, for any
+    /// monitor, a browser on the 60 Hz one drew 170 frames a second at
+    /// uneven times, and its video, timed by them, skipped one frame in six.
+    callbacks: Vec<(WlCallback, Waits)>,
     /// (`PLEAMAR_TIMING`) Since the last census: the windows' commits, the
     /// ones with something new to show, and the frames told to the scene.
     tally: [u32; 3],
     /// A window's frame has been told to the scene and not painted yet: its
     /// frame callbacks wait for that.
     awaiting_paint: bool,
-    /// The last time the windows' frame callbacks were answered.
+    /// The last time the frame callbacks waiting for the scene were answered.
     answered_at: Instant,
+    /// Each monitor's beat: when a frame of it last reached the screen, and how many of its
+    /// refreshes since then its windows have been told of. With nothing new
+    /// shown, a window is told on the next refresh of that beat: told a
+    /// refresh after it was last told, the browser's frames drifted against
+    /// the monitor's, came 8 or 25 ms apart, and its video skipped frames.
+    beats: Vec<(Instant, u32)>,
     to_render: Sender<ToRender>,
     handle: LoopHandle<'static, State>,
     /// Frames on the card (linux-dmabuf), once the render has said what it can read.
@@ -808,6 +828,7 @@ fn run(max: usize, to_render: Sender<ToRender>, rx: Channel<ToNest>, ready: std:
         tally: [0; 3],
         awaiting_paint: false,
         answered_at: Instant::now(),
+        beats: Vec::new(),
         to_render,
         handle: event_loop.handle(),
         dmabuf: DmabufState::new(),
@@ -921,9 +942,7 @@ fn run(max: usize, to_render: Sender<ToRender>, rx: Channel<ToNest>, ready: std:
                 state.inhibitors.len()
             );
         }
-        if state.callbacks_due_in().is_some_and(|d| d.is_zero()) {
-            state.frame_done(None);
-        }
+        state.answer_due();
         if last_done.elapsed() > Duration::from_millis(250) && !state.callbacks.is_empty() {
             state.frame_done_all();
         }
@@ -1886,7 +1905,7 @@ impl State {
 
     /// What the session and the monitors say about the programs' surfaces.
     fn layer_input(&mut self, m: ToLayers) {
-        if std::env::var_os("PLEAMAR_DEBUG_WINDOWS").is_some() && !matches!(m, ToLayers::FrameDone(_) | ToLayers::Released(_)) {
+        if std::env::var_os("PLEAMAR_DEBUG_WINDOWS").is_some() && !matches!(m, ToLayers::FrameDone(_) | ToLayers::Landed(_) | ToLayers::Released(_)) {
             eprintln!("windows · {m:?}");
         }
         let serial = SERIAL_COUNTER.next_serial();
@@ -1955,6 +1974,11 @@ impl State {
             ToLayers::FrameDone(name) => {
                 let monitor = layers::monitors().iter().position(|m| m.name == name);
                 self.frame_done(monitor);
+            }
+            ToLayers::Landed(name) => {
+                if let Some(m) = layers::monitors().iter().position(|m| m.name == name) {
+                    self.windows_landed(m);
+                }
             }
             ToLayers::Launch(command) => {
                 self.launch(&command);
@@ -2221,16 +2245,21 @@ impl State {
         }
     }
 
-    /// A monitor was shown (`Some`), or the scene painted (`None`): the
-    /// windows may draw again, and the programs' surfaces on that monitor.
+    /// A monitor was shown (`Some`), or the scene painted (`None`): what
+    /// waits for the scene may draw again, and on a monitor shown, the
+    /// windows and the programs' surfaces there.
     fn frame_done(&mut self, monitor: Option<usize>) {
         let t = self.time();
         self.answered_at = Instant::now();
         if monitor.is_none() {
             self.awaiting_paint = false;
         }
-        self.callbacks.retain(|(cb, on)| {
-            let now = on.is_none() || *on == monitor;
+        self.callbacks.retain(|(cb, waits)| {
+            let now = match *waits {
+                Waits::Scene => true,
+                Waits::Panel(m) => Some(m) == monitor,
+                Waits::Window(_) => false,
+            };
             if now {
                 cb.done(t);
             }
@@ -2239,16 +2268,102 @@ impl State {
         self.presentation_done();
     }
 
-    /// How long the windows' frame callbacks still wait when nothing of
-    /// theirs is being painted: until a refresh of the fastest monitor has
-    /// gone by since they were last answered. `None`: there are none, or they
-    /// wait for the scene to paint what it was told.
+    /// A frame of that monitor reached the screen: its windows are told, and
+    /// its beat starts again from this refresh.
+    fn windows_landed(&mut self, m: usize) {
+        if self.beats.len() <= m {
+            self.beats.resize(m + 1, (Instant::now(), 0));
+        }
+        self.beats[m] = (Instant::now(), 0);
+        let t = self.time();
+        let mut any = false;
+        self.callbacks.retain(|(cb, waits)| {
+            let now = *waits == Waits::Window(m);
+            if now {
+                cb.done(t);
+                any = true;
+            }
+            !now
+        });
+        if any {
+            self.presentation_done();
+        }
+    }
+
+    /// How long until the next refresh of that monitor's beat its windows
+    /// have not been told of (zero: it has come).
+    fn beat_due_in(&self, m: usize) -> Duration {
+        let Some(&(at, told)) = self.beats.get(m) else { return Duration::ZERO };
+        (at + self.refresh_of(Some(m)) * (told + 1)).saturating_duration_since(Instant::now())
+    }
+
+    /// A refresh of that monitor (`None`: of the fastest).
+    fn refresh_of(&self, monitor: Option<usize>) -> Duration {
+        let mhz = match monitor {
+            Some(m) => self.outputs.get(m).and_then(|o| o.current_mode()).map_or(60_000, |m| m.refresh),
+            None => self.outputs.iter().filter_map(|o| o.current_mode()).map(|m| m.refresh).max().unwrap_or(60_000),
+        };
+        Duration::from_nanos(1_000_000_000_000 / mhz.max(1_000) as u64)
+    }
+
+    /// How long the frame callbacks of the windows, and of what waits for the
+    /// scene, still wait when nothing of theirs is being painted: until a
+    /// refresh of their monitor (the fastest, for the scene's) has gone by
+    /// since they were last answered. `None`: there are none, or they wait
+    /// for the scene to paint what it was told.
     fn callbacks_due_in(&self) -> Option<Duration> {
-        if self.awaiting_paint || !self.callbacks.iter().any(|(_, on)| on.is_none()) {
+        if self.awaiting_paint {
             return None;
         }
-        let mhz = self.outputs.iter().filter_map(|o| o.current_mode()).map(|m| m.refresh).max().unwrap_or(60_000).max(1_000);
-        Some(Duration::from_nanos(1_000_000_000_000 / mhz as u64).saturating_sub(self.answered_at.elapsed()))
+        self.callbacks
+            .iter()
+            .filter_map(|(_, waits)| match *waits {
+                Waits::Scene => Some(self.refresh_of(None).saturating_sub(self.answered_at.elapsed())),
+                Waits::Window(m) => Some(self.beat_due_in(m)),
+                Waits::Panel(_) => None,
+            })
+            .min()
+    }
+
+    /// Those whose wait is over (see `callbacks_due_in`), told.
+    fn answer_due(&mut self) {
+        if self.awaiting_paint {
+            return;
+        }
+        let t = self.time();
+        let scene_due = self.refresh_of(None) <= self.answered_at.elapsed();
+        let mut due: Vec<usize> = self.callbacks.iter().filter_map(|(_, w)| if let Waits::Window(m) = *w { Some(m) } else { None }).filter(|&m| self.beat_due_in(m).is_zero()).collect();
+        due.sort_unstable();
+        due.dedup();
+        let windows_due = |m: usize| due.contains(&m);
+        let mut any = false;
+        self.callbacks.retain(|(cb, waits)| {
+            let now = match *waits {
+                Waits::Scene => scene_due,
+                Waits::Window(m) => windows_due(m),
+                Waits::Panel(_) => false,
+            };
+            if now {
+                cb.done(t);
+                any = true;
+            }
+            !now
+        });
+        if scene_due {
+            self.answered_at = Instant::now();
+        }
+        // The refresh that has come, told (and those missed, skipped).
+        for m in due {
+            let period = self.refresh_of(Some(m));
+            if self.beats.len() <= m {
+                self.beats.resize(m + 1, (Instant::now(), 0));
+            }
+            let (at, _) = self.beats[m];
+            self.beats[m].1 = (at.elapsed().as_nanos() / period.as_nanos().max(1)) as u32;
+        }
+        if any {
+            self.presentation_done();
+        }
     }
 
     /// All of them: nothing has been shown for a while (see the loop).
@@ -2957,13 +3072,20 @@ impl CompositorHandler for State {
             let attrs = guard.current();
             (attrs.buffer.take(), std::mem::take(&mut attrs.frame_callbacks))
         });
-        // A program's own surface (or one hanging from it): the monitor it is on.
+        // A program's own surface or a window (or one hanging from it): the
+        // monitor it is on.
         let mut root = surface.clone();
         while let Some(p) = get_parent(&root) {
             root = p;
         }
-        let on = self.panels.iter().find(|p| p.shell.wl_surface() == &root).map(|p| p.monitor);
-        self.callbacks.extend(callbacks.into_iter().map(|cb| (cb, on)));
+        let waits = match self.panels.iter().find(|p| p.shell.wl_surface() == &root) {
+            Some(p) => Waits::Panel(p.monitor),
+            None => match self.slots.iter().flatten().find(|w| w.surface == root) {
+                Some(w) => Waits::Window(w.screen),
+                None => Waits::Scene,
+            },
+        };
+        self.callbacks.extend(callbacks.into_iter().map(|cb| (cb, waits)));
         let feedback = with_states(surface, |s| std::mem::take(&mut s.cached_state.get::<PresentationFeedbackCachedState>().current().callbacks));
         let buffer_was_removed = matches!(buffer, Some(BufferAssignment::Removed));
         self.tally[0] += 1;
