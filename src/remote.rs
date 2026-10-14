@@ -1527,7 +1527,10 @@ fn viewer(stream: TcpStream, token: String, from: String, gate: &Arc<Mutex<Gate>
                     ("got", [seq]) => flow.got(*seq as u32),
                     // How long the frames wait on the way now (ms over the
                     // way's own time): over 80 for half a second, less.
-                    ("q", [ms]) if direct => {
+                    // Ten seconds or more is no line on the way but a clock
+                    // that changed under the page (an older page, a way that
+                    // started again): not believed.
+                    ("q", [ms]) if direct && *ms < 10_000.0 => {
                         waits = *ms;
                         waits_at = Instant::now();
                         if waits > 80.0 {

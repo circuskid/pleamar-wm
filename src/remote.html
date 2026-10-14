@@ -278,6 +278,10 @@
       pc.addTransceiver('video', { direction: 'recvonly' });
       dc = pc.createDataChannel('input', { ordered: true });
       dcVideo = false; pieces = null; vdcErrors = 0; failed = []; seen.decodedHere = 0;
+      // A new way has a clock of its own, started now: what the last one
+      // measured, kept, read as minutes in line (back to a hidden tab, the
+      // picture fell to its least for a minute).
+      late.buckets = []; late.worst = 0;
       // Only if it decodes what home makes (H.264 High, as the card makes it).
       const decodes = 'VideoDecoder' in window && await VideoDecoder.isConfigSupported({ codec: 'avc1.640033', optimizeForLatency: true }).then((r) => r.supported, () => false);
       plog('direct way offered · decodes H.264 High here: ' + decodes);
