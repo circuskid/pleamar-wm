@@ -107,7 +107,8 @@ Every release, with what changed: [Releases].
   app=discord workspace 3 monitor HDMI-A-1` in `session.conf`.
 - **Every window rides a spring**: change your mind mid-drag and it turns without a jolt.
 - **Drag with a live preview** —by the title bar when free, by the gap above
-  it when tiled, or from anywhere with `Super` held—: the others move aside as they would be; drop on
+  it when tiled, by a program's own title bar (a GTK 4 header bar, a
+  browser's tabs), or from anywhere with `Super` held—: the others move aside as they would be; drop on
   a window to swap (also across monitors), on the other monitor to send it, or
   on the layouts strip to change the layout.
 - **Minimize into [Marea]**: the window melts into a drop that falls into her
@@ -276,6 +277,7 @@ window app=pavucontrol float size 820x560   # what some windows do when they ope
 window app=discord workspace 3 monitor 1
 window title="Picture in Picture" float     # `*` for anything: app=org.gnome.*
 window app=org.keepassxc.KeePassXC private  # pixelated when a whole screen is shared
+window app=zen frame=own                    # it draws its own title bar (its tabs up there)
 ```
 
 In the login screen (SDDM, GDM): `pleamar-update --session` puts «pleamar-wm»

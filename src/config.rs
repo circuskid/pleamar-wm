@@ -116,9 +116,13 @@ pub struct WindowRule {
     /// Never seen in what is shared of a whole monitor, nor in its screenshots:
     /// pixelated there (a password manager, a private chat).
     pub private: bool,
+    /// `frame=own`: the program draws its own title bar and edges (a
+    /// browser's tabs up there); `frame=ours`: the scene draws them, if the
+    /// program lets it. Without it, the scene's, for whoever lets it.
+    pub frame: Option<bool>,
 }
 
-/// What the rules say for a window: float, size, monitor, workspace, private.
+/// What the rules say for a window: float, size, monitor, workspace, private, frame.
 #[derive(Default, Debug, PartialEq)]
 pub struct ForWindow {
     pub float: bool,
@@ -126,6 +130,8 @@ pub struct ForWindow {
     pub monitor: Option<String>,
     pub workspace: Option<usize>,
     pub private: bool,
+    /// Some(true) the scene's frame, Some(false) its own.
+    pub frame: Option<bool>,
 }
 
 /// `*` for anything, no case: `org.gnome.*`, `*Picture*`, `firefox`.
@@ -160,6 +166,7 @@ impl Config {
             out.size = r.size.or(out.size);
             out.monitor = r.monitor.clone().or(out.monitor);
             out.workspace = r.workspace.or(out.workspace);
+            out.frame = r.frame.or(out.frame);
         }
         out
     }
@@ -348,6 +355,13 @@ pub fn parse(text: &str, c: &mut Config) {
                         r.float = true;
                     } else if w == "private" {
                         r.private = true;
+                    } else if let Some(v) = w.strip_prefix("frame=") {
+                        r.frame = match v {
+                            "ours" => Some(true),
+                            "own" => Some(false),
+                            _ => None,
+                        };
+                        ok &= r.frame.is_some();
                     } else if w == "size" {
                         r.size = rest.get(k + 1).and_then(|s| s.split_once('x')).and_then(|(a, b)| Some((a.parse().ok()?, b.parse().ok()?)));
                         ok &= r.size.is_some();
@@ -368,7 +382,7 @@ pub fn parse(text: &str, c: &mut Config) {
                 if ok && (r.app.is_some() || r.title.is_some()) {
                     c.windows.push(r);
                 } else {
-                    eprintln!("config · line {}: a window rule is `window app=NAME|title=TEXT [float] [size WxH] [monitor N|NAME] [workspace N] [private]`", n + 1);
+                    eprintln!("config · line {}: a window rule is `window app=NAME|title=TEXT [float] [size WxH] [monitor N|NAME] [workspace N] [private] [frame=own|ours]`", n + 1);
                 }
             }
             "agent" => c.agent = on(rest.first()).unwrap_or_else(|| {
@@ -605,6 +619,10 @@ mod tests {
         parse("window app=org.keepassxc.* private", &mut c);
         assert!(c.for_window("org.keepassxc.KeePassXC", "Passwords").private);
         assert!(!c.for_window("kitty", "zsh").private);
+        parse("window app=zen frame=own\nwindow app=cA frame=ours\nwindow app=kitty frame=nobody", &mut c);
+        assert_eq!(c.for_window("zen", "Inicio").frame, Some(false));
+        assert_eq!(c.for_window("cA", "sh").frame, Some(true));
+        assert_eq!(c.for_window("kitty", "zsh").frame, None, "an unknown frame word is no rule");
     }
 
     #[test]

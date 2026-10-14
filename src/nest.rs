@@ -287,6 +287,8 @@ struct Window {
     floating: bool,
     /// What the rules said of it, once one matched (its size, if they gave one).
     ruled: Option<Option<(i32, i32)>>,
+    /// A rule says it draws its own frame (`window … frame=own`).
+    own_frame: bool,
     /// Put away (minimized): out of the order too, and where it was in it,
     /// to go back there.
     minimized: bool,
@@ -519,6 +521,9 @@ struct State {
     /// The windows that took the frame the scene draws (xdg-decoration,
     /// server side), by their surface: the others draw their own.
     decorated: std::collections::HashSet<WlSurface>,
+    /// The GTK 3 programs' frame objects (KDE's protocol), to tell one later
+    /// that it draws its own after all (`window … frame=own`).
+    kde_frames: std::collections::HashMap<WlSurface, smithay::reexports::wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration::OrgKdeKwinServerDecoration>,
     /// A window that asked, from its own title bar or edge, to be carried or
     /// stretched: until the button is let go.
     held: Option<usize>,
@@ -817,6 +822,7 @@ fn run(max: usize, to_render: Sender<ToRender>, rx: Channel<ToNest>, ready: std:
         next_slot: 0,
         asked: vec![None; max],
         decorated: std::collections::HashSet::new(),
+        kde_frames: std::collections::HashMap::new(),
         held: None,
         focus: None,
         focus_given: None,
@@ -1453,6 +1459,45 @@ impl State {
         if let Some(ws) = rules.workspace {
             self.tell(NestEvent::Workspace(slot, ws));
         }
+        if let Some(ours) = rules.frame {
+            self.set_frame(slot, ours);
+        }
+    }
+
+    /// Whether the rules say it draws its own frame (`window … frame=own`).
+    fn own_frame(&self, surface: &WlSurface) -> bool {
+        self.slots.iter().flatten().find(|w| &w.surface == surface).is_some_and(|w| w.own_frame)
+    }
+
+    /// Who draws its frame, as a rule says: the scene (if the program lets
+    /// it) or the program itself. The scene is told whether to draw one.
+    fn set_frame(&mut self, slot: usize, ours: bool) {
+        use smithay::reexports::wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration::Mode;
+        let Some(Some(w)) = self.slots.get_mut(slot) else { return };
+        w.own_frame = !ours;
+        let surface = w.surface.clone();
+        let framed = match &w.toplevel {
+            // An X11 program has no say: the scene is its window manager.
+            Toplevel::X11(_) => ours,
+            Toplevel::Xdg(t) => {
+                let mode = if ours { DecorationMode::ServerSide } else { DecorationMode::ClientSide };
+                t.with_pending_state(|s| s.decoration_mode = Some(mode));
+                if t.is_initial_configure_sent() {
+                    t.send_pending_configure();
+                }
+                if let Some(d) = self.kde_frames.get(&surface) {
+                    d.mode(if ours { Mode::Server } else { Mode::Client });
+                }
+                // Ours only if it took a frame protocol at all (GTK 4 takes none).
+                ours && (self.decorated.contains(&surface) || self.kde_frames.contains_key(&surface))
+            }
+        };
+        if framed {
+            self.decorated.insert(surface);
+        } else {
+            self.decorated.remove(&surface);
+        }
+        self.tell(NestEvent::Framed(slot, framed));
     }
 
     /// Which program it is (its app id; an X11 one's class).
@@ -2439,7 +2484,7 @@ impl State {
         }
         self.outputs[screen.min(self.outputs.len() - 1)].enter(&surface);
         let listed = self.toplevel_list.new_toplevel::<State>(title.clone(), app.clone());
-        self.slots[slot] = Some(Window { toplevel, surface, title: title.clone(), app: app.clone(), geometry: [0, 0, 0, 0], sent: Vec::new(), told: Vec::new(), screen, shown: None, listed, fullscreen: false, dialog: false, floating: false, ruled: None, minimized: false, was_at: 0, floated: false, home: None });
+        self.slots[slot] = Some(Window { toplevel, surface, title: title.clone(), app: app.clone(), geometry: [0, 0, 0, 0], sent: Vec::new(), told: Vec::new(), screen, shown: None, listed, fullscreen: false, dialog: false, floating: false, ruled: None, own_frame: false, minimized: false, was_at: 0, floated: false, home: None });
         self.order.push(slot);
         layers::set_private(slot, false);
         let program = (!app.is_empty()).then(|| crate::desktop::program(&app));
@@ -3318,6 +3363,7 @@ impl XdgShellHandler for State {
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
         self.decorated.remove(surface.wl_surface());
+        self.kde_frames.remove(surface.wl_surface());
         if self.held.is_some_and(|slot| self.window_of(surface.wl_surface()) == Some(slot)) {
             self.held = None;
         }
@@ -3421,11 +3467,16 @@ impl XdgShellHandler for State {
 }
 
 impl XdgDecorationHandler for State {
-    // The scene draws the frame: the programs are asked not to.
+    // The scene draws the frame: the programs are asked not to (unless a
+    // rule says it draws its own, `window … frame=own`).
     fn new_decoration(&mut self, toplevel: ToplevelSurface) {
-        toplevel.with_pending_state(|s| s.decoration_mode = Some(DecorationMode::ServerSide));
+        let own = self.own_frame(toplevel.wl_surface());
+        toplevel.with_pending_state(|s| s.decoration_mode = Some(if own { DecorationMode::ClientSide } else { DecorationMode::ServerSide }));
         if toplevel.is_initial_configure_sent() {
             toplevel.send_pending_configure();
+        }
+        if own {
+            return;
         }
         // It lets the scene draw its frame (the scene is told when it has a slot).
         let surface = toplevel.wl_surface().clone();
@@ -3450,13 +3501,16 @@ impl KdeDecorationHandler for State {
     fn kde_decoration_state(&self) -> &KdeDecorationState {
         &self.kde_decorations
     }
-    fn new_decoration(&mut self, _: &WlSurface, decoration: &smithay::reexports::wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration::OrgKdeKwinServerDecoration) {
-        decoration.mode(smithay::reexports::wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration::Mode::Server);
+    fn new_decoration(&mut self, surface: &WlSurface, decoration: &smithay::reexports::wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration::OrgKdeKwinServerDecoration) {
+        use smithay::reexports::wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration::Mode;
+        decoration.mode(if self.own_frame(surface) { Mode::Client } else { Mode::Server });
+        self.kde_frames.insert(surface.clone(), decoration.clone());
     }
     // The program says which it takes: the scene is told whether to frame it.
     fn request_mode(&mut self, surface: &WlSurface, decoration: &smithay::reexports::wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration::OrgKdeKwinServerDecoration, mode: smithay::reexports::wayland_server::WEnum<smithay::reexports::wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration::Mode>) {
         use smithay::reexports::wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration::Mode;
         let smithay::reexports::wayland_server::WEnum::Value(mode) = mode else { return };
+        let mode = if self.own_frame(surface) { Mode::Client } else { mode };
         decoration.mode(mode);
         let framed = mode == Mode::Server;
         let changed = if framed { self.decorated.insert(surface.clone()) } else { self.decorated.remove(surface) };
