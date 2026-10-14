@@ -2150,7 +2150,7 @@ dependencies = [
 
 [[package]]
 name = "pleamar-wm"
-version = "0.3.23"
+version = "0.3.24"
 dependencies = [
  "async-channel",
  "async-io",
@@ -2173,7 +2173,7 @@ dependencies = [
 
 [[package]]
 name = "pleamar-wm-stream"
-version = "0.3.23"
+version = "0.3.24"
 dependencies = [
  "ffmpeg-sys-next",
  "libc",
