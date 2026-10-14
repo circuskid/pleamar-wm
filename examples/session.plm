@@ -6611,7 +6611,7 @@ scene Session {
             // shader): it simply comes in.
             opacity: smooth(0, 0.3, seen.$i) * if(wet > 0.001 or cold > 0.001, water, 1) * (1 - 0.25 * ovcarry.$i) * if(card, if(ph.row, clamp(1.2 - 0.35 * abs(ph.d), 0.4, 1), clamp(1 + 0.2 * ph.d, 0.3, 1)), 1)
             pivot: x + w / 2, y + h / 2
-            scale: (0.92 + 0.08 * seen.$i + 0.025 * choose.$i.hover * ov) * (1 + 0.05 * (lift.$i - F)) * (1 + 0.012 * sin(180 * wave.$i)) * (1 - 0.6 * ovcarry.$i), (0.92 + 0.08 * seen.$i + 0.025 * choose.$i.hover * ov) * (1 + 0.05 * (lift.$i - F)) * (1 + 0.012 * sin(180 * wave.$i)) * (1 - 0.6 * ovcarry.$i)
+            scale: (1 + 0.025 * choose.$i.hover * ov) * (1 + 0.05 * (lift.$i - F)) * (1 + 0.012 * sin(180 * wave.$i)) * (1 - 0.6 * ovcarry.$i), (1 + 0.025 * choose.$i.hover * ov) * (1 + 0.05 * (lift.$i - F)) * (1 + 0.012 * sin(180 * wave.$i)) * (1 - 0.6 * ovcarry.$i)
             body {
                 color: #0c0e10
                 shadow: 0, 14 + 8 * lit.$i + 10 * lift.$i, 34 + 18 * lift.$i, 45% + 20% * lit.$i + 10% * lift.$i
