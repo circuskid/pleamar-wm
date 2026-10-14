@@ -374,6 +374,15 @@ impl State {
                 }
                 _ => Err("bad-args"),
             },
+            // Files the remote page received, dropped on the window under
+            // the pointer (a `text/uri-list`, in hex).
+            ["D", uris] if uris.len() % 2 == 0 && uris.len() <= 60_000 => {
+                let bytes: Result<Vec<u8>, _> = (0..uris.len()).step_by(2).map(|k| u8::from_str_radix(&uris[k..k + 2], 16)).collect();
+                match bytes.ok().and_then(|b| String::from_utf8(b).ok()) {
+                    Some(list) if list.starts_with("file://") => self.drop_files(list),
+                    _ => Err("bad-args"),
+                }
+            }
             // A phone asks for a monitor of its own, and lets it go.
             ["P", "off"] => {
                 if layers::request_phone(None) {

@@ -56,6 +56,11 @@ const HELP: &str = "pleamar-wm remote — this desktop from a browser elsewhere
   --view-only  the same, but only to watch: the mouse and keys there do nothing here
   stop         from this computer: everyone using it from elsewhere out, now, and every
                session ended (Super+Shift+Escape in pleamar-wm's keys)
+  send FILE…   offer files or folders to the page connected now, to download there
+               (the same as copying them in a file manager: it puts them on the clipboard)
+
+Files dropped on the page, or sent with its button, land in «Remote» in your
+downloads folder; dropped on a window, that window is given them too.
 
 Make it reachable with something that encrypts it, for example:
   tailscale funnel --bg --https=8443 http://127.0.0.1:8765";
@@ -66,6 +71,7 @@ pub fn run(args: &[String]) -> i32 {
         Some("--view-only") => serve(true),
         Some("setup") => setup(),
         Some("stop") => stop(),
+        Some("send") => send(&args[1..]),
         Some("help") | Some("--help") | Some("-h") => {
             println!("{HELP}");
             Ok(())
@@ -342,6 +348,8 @@ struct Request {
     path: String,
     headers: HashMap<String, String>,
     body: Vec<u8>,
+    /// A file sent up (`POST /upload`): its body is read from here as it comes.
+    rest: Option<BufReader<TcpStream>>,
 }
 
 fn read_request(stream: &mut TcpStream) -> Result<Request, String> {
@@ -368,10 +376,13 @@ fn read_request(stream: &mut TcpStream) -> Result<Request, String> {
             headers.insert(k.trim().to_ascii_lowercase(), v.trim().to_owned());
         }
     }
+    if method == "POST" && path.starts_with("/upload?") {
+        return Ok(Request { method, path, headers, body: Vec::new(), rest: Some(reader) });
+    }
     let length: usize = headers.get("content-length").and_then(|v| v.parse().ok()).unwrap_or(0).min(16 * 1024);
     let mut body = vec![0; length];
     reader.read_exact(&mut body).map_err(|e| e.to_string())?;
-    Ok(Request { method, path, headers, body })
+    Ok(Request { method, path, headers, body, rest: None })
 }
 
 fn respond(stream: &mut TcpStream, status: &str, kind: &str, extra: &str, body: &[u8]) -> Result<(), String> {
@@ -468,7 +479,7 @@ fn again() {
 }
 
 fn connection(mut stream: TcpStream, gate: &Arc<Mutex<Gate>>, hands: &Arc<Mutex<Option<Hands>>>, view_only: bool) -> Result<(), String> {
-    let req = read_request(&mut stream)?;
+    let mut req = read_request(&mut stream)?;
     let token = cookie(&req);
     let signed_in = token.as_deref().is_some_and(|t| gate.lock().unwrap().valid(t));
     let html = "text/html; charset=utf-8";
@@ -531,8 +542,54 @@ fn connection(mut stream: TcpStream, gate: &Arc<Mutex<Gate>>, hands: &Arc<Mutex<
             let from = who(&req, &stream);
             viewer(stream, token.unwrap_or_default(), from, gate, hands, view_only)
         }
+        // A file from the page, into the folder for them here.
+        ("POST", "/upload") => {
+            let host = req.headers.get("host").cloned().unwrap_or_default();
+            let origin = req.headers.get("origin").cloned().unwrap_or_default();
+            if !signed_in || view_only {
+                return respond(&mut stream, "403 Forbidden", "text/plain", "", b"sign in first");
+            }
+            if origin != format!("https://{host}") && origin != format!("http://{host}") {
+                return respond(&mut stream, "403 Forbidden", "text/plain", "", b"wrong origin");
+            }
+            let Some(length) = req.headers.get("content-length").and_then(|v| v.parse::<u64>().ok()) else {
+                return respond(&mut stream, "411 Length Required", "text/plain", "", b"how long is it?");
+            };
+            // The body comes slowly over a long way: more time for each piece of it.
+            let _ = stream.set_read_timeout(Some(Duration::from_secs(60)));
+            let q = req.path.split_once('?').map_or("", |(_, q)| q).to_owned();
+            let session = session_of(token.as_deref().unwrap_or_default());
+            let Some(mut body) = req.rest.take() else { return Err("bad request".into()) };
+            match crate::remote_files::receive(&mut body, &q, length, &session) {
+                Ok(saved) => respond(&mut stream, "200 OK", "text/plain; charset=utf-8", "", saved.as_bytes()),
+                Err((status, why)) => {
+                    println!("remote · a file from {} not saved: {why}", who(&req, &stream));
+                    respond(&mut stream, status, "text/plain; charset=utf-8", "", why.as_bytes())
+                }
+            }
+        }
+        // Something offered here (copied in a file manager), downloaded there.
+        ("GET", p) if p.starts_with("/file/") => {
+            if !signed_in || view_only {
+                return respond(&mut stream, "403 Forbidden", "text/plain", "", b"sign in first");
+            }
+            let session = session_of(token.as_deref().unwrap_or_default());
+            let from = who(&req, &stream);
+            match crate::remote_files::serve(&mut stream, &p["/file/".len()..], &session) {
+                Ok(what) => {
+                    println!("remote · {what} downloaded from {from}");
+                    Ok(())
+                }
+                Err((status, why)) => respond(&mut stream, status, "text/plain; charset=utf-8", "", why.as_bytes()),
+            }
+        }
         _ => respond(&mut stream, "404 Not Found", "text/plain", "", b"not here"),
     }
+}
+
+/// A signed-in session as the files offered to it know it: its cookie's hash.
+fn session_of(token: &str) -> String {
+    hex(&sha2::Sha256::digest(token.as_bytes()))
 }
 
 fn form(body: &str) -> HashMap<String, String> {
@@ -657,6 +714,22 @@ fn phone_index(monitors: &[(String, f64, f64, f64, f64)]) -> Option<usize> {
 fn control_path(port: u16) -> String {
     let dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".into());
     format!("{dir}/pleamar-remote-{port}.sock")
+}
+
+/// `pleamar-wm remote send FILE…`: on the clipboard as files, which every
+/// page connected is offered to download.
+fn send(files: &[String]) -> Result<(), String> {
+    if files.is_empty() {
+        return Err("which files?".into());
+    }
+    let paths: Vec<std::path::PathBuf> = files.iter().map(|f| std::fs::canonicalize(f).map_err(|e| format!("{f}: {e}"))).collect::<Result<_, _>>()?;
+    let mut child = std::process::Command::new("wl-copy").args(["-t", "text/uri-list"]).stdin(std::process::Stdio::piped()).spawn().map_err(|e| format!("wl-copy: {e}"))?;
+    if let Some(mut input) = child.stdin.take() {
+        input.write_all(crate::remote_files::uris_of_paths(&paths).as_bytes()).map_err(|e| e.to_string())?;
+    }
+    child.wait().map_err(|e| e.to_string())?;
+    println!("offered to the page: {} (a «Download» there, for a quarter of an hour)", paths.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(", "));
+    Ok(())
 }
 
 /// `pleamar-wm remote stop`, from this computer: everyone out, now, and
@@ -1145,7 +1218,7 @@ fn viewer(stream: TcpStream, token: String, from: String, gate: &Arc<Mutex<Gate>
         let mut g = gate.lock().unwrap();
         g.next_page += 1;
         let page = g.next_page;
-        g.present.insert(page, (0, from));
+        g.present.insert(page, (0, from.clone()));
         (page, g.kicked)
     };
     struct Leave<'a>(&'a Arc<Mutex<Gate>>, u64);
@@ -1164,6 +1237,11 @@ fn viewer(stream: TcpStream, token: String, from: String, gate: &Arc<Mutex<Gate>
             *h = Some(Hands::new()?);
         }
     }
+    // The clipboard here, watched while this page is in: what it held when
+    // the page came is not sent (it would replace yours on connecting).
+    let clip_watch = ClipWatch::start();
+    let mut clip_known = wl_paste();
+    let mut files_known: Vec<std::path::PathBuf> = Vec::new();
     let mut monitors = crate::agent_cli::monitors()?;
     let mons = |monitors: &[(String, f64, f64, f64, f64)]| {
         let mut list = String::from("mons");
@@ -1282,6 +1360,24 @@ fn viewer(stream: TcpStream, token: String, from: String, gate: &Arc<Mutex<Gate>
         if let Some(ask) = unlocking.as_ref().filter(|_| unlock_tried.elapsed() > Duration::from_millis(1500)) {
             unlock_tried = Instant::now();
             lines.push(ask.clone());
+        }
+        // Something copied here, by any means: to your clipboard too. Files
+        // (copied in a file manager) are offered to download instead.
+        if clip_watch.as_ref().is_some_and(|w| w.changed.try_iter().count() > 0) && !view_only {
+            let kinds = std::process::Command::new("wl-paste").arg("-l").output().ok().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+            if kinds.lines().any(|k| k.trim() == "text/uri-list") {
+                let list = std::process::Command::new("wl-paste").args(["-n", "-t", "text/uri-list"]).output().ok().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+                let paths = crate::remote_files::paths_of_uris(&list);
+                if !paths.is_empty() && paths != files_known {
+                    files_known = paths.clone();
+                    let (t, count, bytes, name) = crate::remote_files::offer(paths, &session_of(&token), hex(&random(32)));
+                    println!("remote · offered to {from}: {name} ({count} files, {})", crate::remote_files::size(bytes));
+                    let _ = ws.send(Message::Text(format!("files {t} {count} {bytes} {name}").into()));
+                }
+            } else if let Some(text) = wl_paste().filter(|t| clip_known.as_ref() != Some(t) && t.len() <= CLIP_MOST) {
+                clip_known = Some(text.clone());
+                let _ = ws.send(Message::Text(format!("clipped {text}").into()));
+            }
         }
         let mut gone = false;
         while let Some(event) = peer.as_ref().and_then(|p| p.events.try_recv().ok()) {
@@ -1626,14 +1722,61 @@ fn viewer(stream: TcpStream, token: String, from: String, gate: &Arc<Mutex<Gate>
                         h.key(*c as u16, *d != 0.0)
                     }
                     ("rel", _) => h.release(),
-                    ("paste", _) => {
-                        // Your text in the clipboard here; then the page's
-                        // own Ctrl+V lands with it.
-                        let ok = wl_copy(rest);
+                    ("paste", _) if !view_only => {
+                        // `S` or `-` (Shift held with it: a terminal's
+                        // Ctrl+Shift+V), then your text, if your clipboard
+                        // changed since both held the same. Without it, the
+                        // one here is newer —copied here with the mouse— or
+                        // holds what a text cannot (a picture, files): kept.
+                        // Then Ctrl+V pressed from here, right after: pressed
+                        // from the page once this answered, the Ctrl had often
+                        // been let go on the way —the keys come by the direct
+                        // way, this by the socket— and nothing was pasted.
+                        let shift = rest.starts_with('S');
+                        let ok = match rest.get(2..) {
+                            Some(text) => {
+                                clip_known = Some(text.to_owned());
+                                wl_copy(text)
+                            }
+                            None => true,
+                        };
+                        if ok {
+                            h.paste_keys(shift);
+                        }
                         let _ = ws.send(Message::Text(if ok { "pasted".into() } else { "nopaste".into() }));
                     }
-                    ("copy", _) => {
-                        let text = std::process::Command::new("wl-paste").args(["-n", "-t", "text/plain"]).output().ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+                    // The files of a sending have all come: say so here, and
+                    // if they were dropped on a window, give it them there.
+                    ("received", _) if !view_only => {
+                        let mut f = rest.split_whitespace();
+                        let batch = f.next().unwrap_or_default();
+                        let at: Vec<f64> = f.filter_map(|v| v.parse().ok()).collect();
+                        if let Some((saved, files, bytes, took)) = crate::remote_files::finished(batch, &session_of(&token)) {
+                            let inbox = crate::remote_files::inbox();
+                            let what = match (&saved[..], files) {
+                                ([one], 1) => one.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+                                (_, n) => format!("{n} files"),
+                            };
+                            let _ = std::process::Command::new("notify-send").args(["-a", "pleamar", "Remote desktop", &format!("{what} ({}) from {from}, in {}", crate::remote_files::size(bytes), inbox.display())]).spawn();
+                            println!("remote · received {what} ({}) from {from} in {:.1} s", crate::remote_files::size(bytes), took.as_secs_f64());
+                            // Only a moment after it was let go: a long sending later
+                            // dropped on whatever is there by then would surprise.
+                            let mut dropped = false;
+                            if let ([m, fx, fy], false, true) = (&at[..], saved.is_empty(), took < Duration::from_secs(20))
+                                && let Some(mm) = monitors.get(*m as usize)
+                            {
+                                h.point(&monitors, mm.1 + fx.clamp(0.0, 1.0) * mm.3, mm.2 + fy.clamp(0.0, 1.0) * mm.4);
+                                // The session finds the window under it first.
+                                std::thread::sleep(Duration::from_millis(150));
+                                let uris = crate::remote_files::uris_of_paths(&saved);
+                                dropped = crate::agent_cli::tell(&format!("D {}", hex(uris.as_bytes()))).is_ok_and(|r| r.starts_with("ok"));
+                            }
+                            let _ = ws.send(Message::Text(format!("saved {files} {} {}", dropped as u8, inbox.display()).into()));
+                        }
+                    }
+                    ("copy", _) if !view_only => {
+                        let text = wl_paste().unwrap_or_default();
+                        clip_known = Some(text.clone());
                         let _ = ws.send(Message::Text(format!("clip {text}").into()));
                     }
                     _ => {}
@@ -1943,6 +2086,46 @@ fn jpeg(w: usize, rgb: &[u8], x: usize, y: usize, cw: usize, ch: usize) -> Optio
     }
     image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 80).encode(&cut, cw as u32, ch as u32, image::ExtendedColorType::Rgb8).ok()?;
     Some(out)
+}
+
+/// What the clipboard here holds as text, if it holds text.
+fn wl_paste() -> Option<String> {
+    std::process::Command::new("wl-paste").args(["-n", "-t", "text/plain"]).output().ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+}
+
+/// Past this, a copy here is not sent to the page: a whole file's text.
+const CLIP_MOST: usize = 1 << 20;
+
+/// `wl-paste --watch`: a line each time the clipboard here changes.
+struct ClipWatch {
+    child: std::process::Child,
+    changed: mpsc::Receiver<()>,
+}
+
+impl ClipWatch {
+    fn start() -> Option<ClipWatch> {
+        let mut child = std::process::Command::new("wl-paste").args(["--watch", "echo"]).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null()).spawn().ok()?;
+        let out = child.stdout.take()?;
+        let (tx, changed) = mpsc::channel();
+        std::thread::Builder::new()
+            .name("clipboard".into())
+            .spawn(move || {
+                for _ in BufReader::new(out).lines().map_while(Result::ok) {
+                    if tx.send(()).is_err() {
+                        break;
+                    }
+                }
+            })
+            .ok()?;
+        Some(ClipWatch { child, changed })
+    }
+}
+
+impl Drop for ClipWatch {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
 }
 
 fn wl_copy(text: &str) -> bool {
@@ -2340,6 +2523,27 @@ impl Hands {
             return;
         }
         self.press(false, &[(EV_KEY, code, down as i32)]);
+    }
+
+    /// Ctrl+V (Ctrl+Shift+V), with what of it is not held already: the
+    /// page's own Ctrl may be down still, or let go on the way.
+    fn paste_keys(&mut self, shift: bool) {
+        let held = |h: &Hands, a: u16, b: u16| h.held_keys.contains(&a) || h.held_keys.contains(&b);
+        let mut pressed = Vec::new();
+        if !held(self, 29, 97) {
+            pressed.push(29);
+        }
+        if shift && !held(self, 42, 54) {
+            pressed.push(42);
+        }
+        for &k in &pressed {
+            self.key(k, true);
+        }
+        self.key(47, true);
+        self.key(47, false);
+        for &k in pressed.iter().rev() {
+            self.key(k, false);
+        }
     }
 
     /// Nothing left pressed (the page lost focus, or went away).

@@ -18,6 +18,8 @@ default-members = ["."]
 [dependencies]
 pleamar = { path = "../pleamar" }
 libc = "0.2"
+# The checksums of a zip of files sent to the remote page.
+crc32fast = "1"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 # `pleamar-wm remote`: the page's socket, its sign-in (a password's hash, six-digit codes).
 tungstenite = { version = "0.24", default-features = false }

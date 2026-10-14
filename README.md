@@ -188,6 +188,18 @@ pleamar-wm remote            # the page, on 127.0.0.1:8765 (keep it running)
 tailscale funnel --bg --https=8443 http://127.0.0.1:8765   # reachable, encrypted
 ```
 
+The clipboard is shared: what you copy at home, by any means, lands in the
+other computer's while the page has the focus, and Ctrl+V on the page takes
+yours home only if it changed since, so a picture or files copied at home are
+pasted as they are.
+
+Files go both ways. Drop them (folders too) on the page, or use its «Send
+files» button: they land in «Remote» in your downloads folder, never
+replacing anything, and dropped on a window, that window is given them as if
+dragged there. The other way, copy files in a file manager at home, or run
+`pleamar-wm remote send FILE…`: the page shows a «Download» for them (several,
+or a folder, as a zip) for a quarter of an hour, to that signed-in session only.
+
 From the source, next to a clone of [pleamar] (`../pleamar`):
 
 ```sh

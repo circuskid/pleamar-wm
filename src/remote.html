@@ -126,6 +126,19 @@
   #ph-lock b { color: #e8c26a; font-weight: 650; }
   #ph-lock p { margin: 0; color: #9aa3a8; font-size: 13px; }
   #ph-lock button { justify-self: start; border: 0; border-radius: 14px; padding: 10px 16px; font: inherit; font-weight: 650; color: #062421; background: #e8c26a; }
+  /* Files: dropped here to go home, coming, and offered from home. */
+  #dropzone { position: absolute; inset: 10px; z-index: 4; border: 2px dashed #9ed6bd; border-radius: 18px; background: #0d151966; display: none; align-items: center; justify-content: center; pointer-events: none; color: var(--ink); font-size: 15px; text-align: center; line-height: 1.6; }
+  #dropzone.on { display: flex; }
+  #dropzone b { display: block; font-size: 19px; }
+  .pill { position: absolute; left: 50%; z-index: 6; display: none; gap: 12px; align-items: center; padding: 8px 8px 8px 16px; border-radius: 22px; background: #0d1519f2; border: 1px solid #9ed6bd55; backdrop-filter: blur(14px); color: var(--ink); font-size: 13.5px; white-space: nowrap; box-shadow: 0 8px 30px #0008; transform: translateX(-50%); max-width: calc(100% - 24px); }
+  .pill.on { display: flex; }
+  .pill span { overflow: hidden; text-overflow: ellipsis; }
+  .pill button { border: 0; border-radius: 16px; padding: 7px 14px; background: #9ed6bd; color: #062421; font: inherit; font-weight: 650; cursor: pointer; }
+  .pill button.quiet { background: transparent; color: var(--ink); border: 1px solid var(--line); font-weight: 400; }
+  #xfer { bottom: calc(56px + env(safe-area-inset-bottom)); }
+  #xfer .meter { width: 120px; height: 6px; border-radius: 3px; background: #ffffff22; overflow: hidden; flex: none; }
+  #xfer .meter i { display: block; height: 100%; width: 0; background: #9ed6bd; }
+  #offer { bottom: calc(104px + env(safe-area-inset-bottom)); }
 </style>
 </head>
 <body>
@@ -147,6 +160,8 @@
     <button id="super" title="Hold Super at home for the next key: Super, then 1 or Tab. Again, to let it go">Super</button>
     <button id="pastebtn" title="Your clipboard here into the one at home, then Ctrl+V">Paste here ↦</button>
     <button id="copybtn" title="The clipboard at home into yours">Copy home ↤</button>
+    <button id="sendbtn" title="Files from here into «Remote» in the downloads folder at home. Or drop them on the desktop: on a window, it gets them too">Send files ↥</button>
+    <input id="sendpick" type="file" multiple hidden>
     <span class="sep"></span>
     <span class="status" id="status">connecting…</span>
     <form method="post" action="/logout" style="margin:0"><button type="submit">Sign out</button></form>
@@ -155,6 +170,9 @@
   <div id="stage"><canvas id="screen" tabindex="0"></canvas><video id="direct" autoplay muted playsinline disablepictureinpicture></video></div>
   <textarea id="keys" aria-hidden="true"></textarea>
   <div id="toast"></div>
+  <div id="dropzone"><div><b>Drop to send home</b>Into «Remote» in its downloads. On a window, the window gets them too.</div></div>
+  <div id="xfer" class="pill"><span id="xfer-what">Sending…</span><span class="meter"><i></i></span><button id="xfer-stop" class="quiet">Cancel</button></div>
+  <div id="offer" class="pill"><span id="offer-what"></span><button id="offer-go">Download</button><button id="offer-no" class="quiet">✕</button></div>
   <div id="edge"><div class="glow"></div><div class="line"></div><div class="chip"></div></div>
   <div id="update"><span id="update-what">A new version is ready</span><button id="update-go">Update</button></div>
   <div id="ph">
@@ -460,9 +478,15 @@
         // When everything sent has been painted, the next one.
         queue = queue.then(() => { send('ack'); frames++; });
       } else if (verb === 'clip') {
-        navigator.clipboard.writeText(arg).then(() => toast('Copied from home'), () => toast('The browser did not let it copy'));
-      } else if (verb === 'pasted') {
-        if (pasteThen) { pasteThen(); pasteThen = null; }
+        putHere(arg, true);
+      } else if (verb === 'clipped') {
+        putHere(arg, false);
+      } else if (verb === 'files') {
+        offered(rest);
+      } else if (verb === 'saved') {
+        const [n, dropped, ...where] = rest;
+        const what = Number(n) === 1 ? 'the file' : n + ' files';
+        toast(dropped === '1' ? 'Sent ' + what + ' home, and dropped on the window' : 'Sent ' + what + ' home: ' + where.join(' ').replace(/^.*\/([^/]+\/[^/]+)$/, '$1'));
       } else if (verb === 'nopaste') {
         toast('Could not paste at home');
       } else if (verb === 'error') {
@@ -737,9 +761,28 @@
     hand('w ' + (e.deltaX * unit).toFixed(3) + ' ' + (e.deltaY * unit).toFixed(3));
   }, { passive: false });
 
+  // One clipboard shared. What is copied at home, by any means, comes into
+  // this one while the page has the focus (a browser lets a page write it
+  // only then; later it could replace something copied here meanwhile).
+  // `synced` is what both held last: pasting with this one still on it,
+  // home's is the newer —copied there with the mouse, or while this one
+  // could not take it— or holds what a text cannot (a picture, files), and
+  // is pasted as it is.
+  let synced = null;
+  const putHere = (text, asked) => navigator.clipboard.writeText(text).then(() => {
+    synced = text;
+    if (asked) toast('Copied from home');
+  }, () => { if (asked) toast('The browser did not let it copy'); });
+  const pasteAtHome = (text, shift) => {
+    const flag = shift ? 'S' : '-';
+    if (!text || text === synced) { send('paste ' + flag); return; }
+    synced = text;
+    send('paste ' + flag + ' ' + text);
+  };
+
   // The keys: all of them go home, except Ctrl+V, which first takes your
-  // clipboard along.
-  let pasteThen = null;
+  // clipboard along, and home presses it.
+  let pasteShift = false;
   const down = new Set();
   // «Super» on the bar holds it at home until the next key is let go: a
   // browser keeps the Windows key for its own computer (unless full screen,
@@ -768,7 +811,7 @@
   keys.addEventListener('keydown', (e) => {
     const code = codeOf(e);
     if (!code) return;
-    if ((e.ctrlKey || e.metaKey) && !e.altKey && e.code === 'KeyV') return; // the paste event follows
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && e.code === 'KeyV') { pasteShift = e.shiftKey; return; } // the paste event follows
     e.preventDefault();
     if (e.repeat) return;
     down.add(code); hand('k ' + code + ' 1');
@@ -781,16 +824,11 @@
     down.delete(code); hand('k ' + code + ' 0');
     // Super held from the bar goes with this key, and is let go with it.
     if (superHeld && !MODIFIERS.has(code)) superUp();
-    // Copying at home: bring it here too.
-    if ((e.ctrlKey || (APPLE_TOUCH && e.metaKey)) && (e.code === 'KeyC' || e.code === 'KeyX')) setTimeout(() => send('copy'), 250);
   });
   keys.addEventListener('paste', (e) => {
     e.preventDefault();
-    const text = e.clipboardData.getData('text/plain');
-    const tapV = () => { hand('k 47 1'); hand('k 47 0'); };
-    if (!text) { tapV(); return; }
-    pasteThen = tapV;
-    send('paste ' + text);
+    pasteAtHome(e.clipboardData.getData('text/plain'), pasteShift);
+    pasteShift = false;
   });
   const releaseAll = () => { down.clear(); hand('rel'); superHeld = false; superBtn.classList.remove('on'); };
   window.addEventListener('blur', releaseAll);
@@ -863,13 +901,128 @@
   };
   document.getElementById('pastebtn').onclick = async () => {
     try {
+      // Asked for: yours, even if home's is newer.
       const text = await navigator.clipboard.readText();
-      pasteThen = () => { hand('k 29 1'); hand('k 47 1'); hand('k 47 0'); hand('k 29 0'); };
-      send('paste ' + text);
+      if (text) synced = text;
+      send('paste -' + (text ? ' ' + text : ''));
     } catch (_) { toast('The browser did not let it read your clipboard'); }
     keys.focus({ preventScroll: true });
   };
   document.getElementById('copybtn').onclick = () => { send('copy'); keys.focus({ preventScroll: true }); };
+
+  // Files, from here to home: one request each, into «Remote» in the
+  // downloads folder there. Dropped on the desktop, where it was let go
+  // goes with them, and the window there is given them as well.
+  const human = (b) => b >= 2 ** 30 ? (b / 2 ** 30).toFixed(1) + ' GB' : b >= 2 ** 20 ? (b / 2 ** 20).toFixed(1) + ' MB' : b >= 1024 ? Math.round(b / 1024) + ' KB' : b + ' B';
+  const xfer = document.getElementById('xfer'), xferWhat = document.getElementById('xfer-what'), xferBar = xfer.querySelector('.meter i');
+  let sending = null;
+  const sendFiles = async (list, dropAt) => {
+    if (!list.length) return;
+    if (sending) { toast('Still sending the last ones'); return; }
+    const batch = [...crypto.getRandomValues(new Uint8Array(12))].map((b) => b.toString(16).padStart(2, '0')).join('');
+    const total = list.reduce((t, f) => t + f.file.size, 0);
+    let done = 0, sent = 0;
+    sending = { xhr: null, stopped: false };
+    xfer.classList.add('on');
+    for (const [k, f] of list.entries()) {
+      if (sending.stopped) break;
+      const ok = await new Promise((resolve) => {
+        const x = new XMLHttpRequest();
+        sending.xhr = x;
+        x.open('POST', '/upload?batch=' + batch + '&path=' + encodeURIComponent(f.path));
+        const shown = (loaded) => {
+          xferWhat.textContent = (list.length > 1 ? (k + 1) + ' of ' + list.length + ' · ' : '') + f.path.split('/').pop() + ' · ' + human(done + loaded) + ' of ' + human(total);
+          xferBar.style.width = (total ? 100 * (done + loaded) / total : 100) + '%';
+        };
+        shown(0);
+        x.upload.onprogress = (e) => shown(e.loaded);
+        x.onload = () => {
+          if (x.status !== 200) toast('Not sent: ' + (x.responseText || x.status));
+          resolve(x.status === 200);
+        };
+        x.onerror = () => { toast('The sending stopped'); resolve(false); };
+        x.onabort = () => resolve(false);
+        x.send(f.file);
+      });
+      if (!ok) break;
+      done += f.file.size;
+      sent++;
+    }
+    const whole = !sending.stopped && sent === list.length;
+    sending = null;
+    xfer.classList.remove('on');
+    if (sent) send('received ' + batch + (whole && dropAt ? ' ' + dropAt.join(' ') : ''));
+    else if (!whole) toast('Nothing was sent');
+  };
+  document.getElementById('xfer-stop').onclick = () => { if (sending) { sending.stopped = true; if (sending.xhr) sending.xhr.abort(); } };
+  const pick = document.getElementById('sendpick');
+  document.getElementById('sendbtn').onclick = () => pick.click();
+  pick.onchange = () => { sendFiles([...pick.files].map((file) => ({ file, path: file.name })), null); pick.value = ''; keys.focus({ preventScroll: true }); };
+  // What was dropped, folders and all (their files with the folders they are in).
+  const gather = async (entries, loose) => {
+    const out = [];
+    const walk = async (entry, prefix) => {
+      if (entry.isFile) {
+        out.push({ file: await new Promise((ok, no) => entry.file(ok, no)), path: prefix + entry.name });
+      } else if (entry.isDirectory) {
+        const reader = entry.createReader();
+        let got;
+        do {
+          got = await new Promise((ok, no) => reader.readEntries(ok, no));
+          for (const c of got) await walk(c, prefix + entry.name + '/');
+        } while (got.length);
+      }
+    };
+    if (!entries.length) return loose.map((file) => ({ file, path: file.name }));
+    for (const e of entries) await walk(e, '');
+    return out;
+  };
+  const dropzone = document.getElementById('dropzone');
+  const carriesFiles = (e) => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+  let dragMove = 0;
+  window.addEventListener('dragover', (e) => {
+    if (!carriesFiles(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    dropzone.classList.add('on');
+    // The pointer at home goes along: it is where they will be dropped.
+    const now = performance.now();
+    if (now - dragMove > 40 && stage.contains(e.target)) { dragMove = now; hand('m ' + at(e).join(' ')); }
+  });
+  window.addEventListener('dragleave', (e) => { if (!e.relatedTarget) dropzone.classList.remove('on'); });
+  window.addEventListener('drop', (e) => {
+    if (!carriesFiles(e)) return;
+    e.preventDefault();
+    dropzone.classList.remove('on');
+    // The entries now: the browser forgets them once this returns.
+    const entries = [...e.dataTransfer.items].map((i) => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean);
+    const loose = [...e.dataTransfer.files];
+    const dropAt = stage.contains(e.target) ? [current, ...at(e)] : null;
+    gather(entries, loose).then((list) => sendFiles(list, dropAt), () => toast('Those could not be read'));
+  });
+
+  // Files offered from home (copied there in a file manager, or
+  // `pleamar-wm remote send`): downloaded here when asked, for a while.
+  const offer = document.getElementById('offer'), offerWhat = document.getElementById('offer-what');
+  let offerToken = null, offerTimer = null;
+  const offered = ([token, n, bytes, ...name]) => {
+    offerToken = token;
+    const count = Number(n);
+    offerWhat.textContent = '⬇ ' + name.join(' ') + ' · ' + human(Number(bytes)) + (count > 1 ? ' · ' + count + ' files' : '') + ' from home';
+    offer.classList.add('on');
+    clearTimeout(offerTimer);
+    offerTimer = setTimeout(() => offer.classList.remove('on'), 15 * 60 * 1000);
+  };
+  document.getElementById('offer-go').onclick = () => {
+    if (!offerToken) return;
+    const a = document.createElement('a');
+    a.href = '/file/' + offerToken;
+    a.download = '';
+    document.body.appendChild(a); a.click(); a.remove();
+    offer.classList.remove('on');
+    keys.focus({ preventScroll: true });
+  };
+  document.getElementById('offer-no').onclick = () => { offer.classList.remove('on'); keys.focus({ preventScroll: true }); };
 
 
   // ── the phone ──

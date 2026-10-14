@@ -587,6 +587,9 @@ struct State {
     /// The surface under the pointer and where it is, as last told: where
     /// relative motion goes.
     last_under: Option<(WlSurface, Point<f64, Logical>)>,
+    /// Files sent from the remote page, being dropped on the window under the
+    /// pointer as if dragged here (`D`): see `drop_files`.
+    dropping: Option<Dropping>,
     /// The surface that holds the pointer (locked or confined), if any.
     constrained: Option<WlSurface>,
     /// Who watches a monitor's power (wlr-output-power-management), and which.
@@ -764,6 +767,7 @@ fn run(max: usize, to_render: Sender<ToRender>, rx: Channel<ToNest>, ready: std:
         presented: Vec::new(),
         presented_seq: 0,
         last_under: None,
+        dropping: None,
         constrained: None,
         powers: Vec::new(),
         seats,
@@ -3577,7 +3581,98 @@ fn read_dragged(source: &smithay::reexports::wayland_server::protocol::wl_data_s
         *into.lock().unwrap() = Some((kind, text));
     });
 }
-impl ServerDndGrabHandler for State {}
+/// Files dropped from here (the remote page's, `D`): what is given, and how
+/// far the window has got with them.
+struct Dropping {
+    uris: String,
+    accepted: bool,
+    acted: bool,
+    /// When it was let go: a program that read them may never say it
+    /// finished (GTK does not), and then it is over a while later.
+    released: Option<Instant>,
+}
+
+impl State {
+    /// A drag of those files (a `text/uri-list`) begins here, over the window
+    /// under the pointer, and is let go there as soon as the window says it
+    /// takes them —a drop it has not accepted yet is a drop it refuses—, or
+    /// after a second and a half all the same.
+    pub(super) fn drop_files(&mut self, uris: String) -> Result<String, &'static str> {
+        use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
+        use smithay::reexports::wayland_server::protocol::wl_data_device_manager::DndAction;
+        if self.dropping.as_ref().is_some_and(|d| d.released.is_none_or(|t| t.elapsed() < std::time::Duration::from_secs(10))) {
+            return Err("busy");
+        }
+        let Some(under) = self.last_under.clone().filter(|_| self.pointer_on.is_some()) else { return Err("no-window") };
+        let p = self.pointer.clone();
+        let location = p.current_location();
+        self.dropping = Some(Dropping { uris, accepted: false, acted: false, released: None });
+        let start = smithay::input::pointer::GrabStartData { focus: Some(under.clone()), button: 0x110, location };
+        let metadata = smithay::wayland::selection::data_device::SourceMetadata { mime_types: vec!["text/uri-list".to_owned()], dnd_action: DndAction::Copy };
+        let dh = self.dh.clone();
+        let seat = self.seat.clone();
+        smithay::wayland::selection::data_device::start_dnd(&dh, &seat, self, SERIAL_COUNTER.next_serial(), Some(start), None, metadata);
+        // The grab enters the window with a motion: then it is offered them.
+        let time = self.time();
+        p.motion(self, Some(under), &MotionEvent { location, serial: SERIAL_COUNTER.next_serial(), time });
+        p.frame(self);
+        let _ = self.handle.insert_source(Timer::from_duration(std::time::Duration::from_millis(1500)), |_, _, state| {
+            state.release_drop();
+            TimeoutAction::Drop
+        });
+        println!("windows · files from the remote page dropped on a program");
+        Ok("ok".to_owned())
+    }
+
+    fn release_drop(&mut self) {
+        let Some(d) = self.dropping.as_mut().filter(|d| d.released.is_none()) else { return };
+        d.released = Some(Instant::now());
+        let p = self.pointer.clone();
+        let (serial, time) = (SERIAL_COUNTER.next_serial(), self.time());
+        p.button(self, &ButtonEvent { serial, time, button: 0x110, state: smithay::backend::input::ButtonState::Released });
+        p.frame(self);
+    }
+
+    fn drop_ready(&mut self) {
+        if self.dropping.as_ref().is_some_and(|d| d.accepted && d.acted && d.released.is_none()) {
+            self.handle.insert_idle(|state| state.release_drop());
+        }
+    }
+}
+
+impl ServerDndGrabHandler for State {
+    fn accept(&mut self, mime_type: Option<String>, _: Seat<Self>) {
+        if let Some(d) = self.dropping.as_mut() {
+            d.accepted = mime_type.is_some();
+        }
+        self.drop_ready();
+    }
+
+    fn action(&mut self, action: smithay::reexports::wayland_server::protocol::wl_data_device_manager::DndAction, _: Seat<Self>) {
+        if let Some(d) = self.dropping.as_mut() {
+            d.acted = !action.is_empty();
+        }
+        self.drop_ready();
+    }
+
+    fn send(&mut self, mime_type: String, fd: std::os::fd::OwnedFd, _: Seat<Self>) {
+        let Some(d) = self.dropping.as_ref().filter(|_| mime_type == "text/uri-list") else { return };
+        let uris = d.uris.clone();
+        std::thread::spawn(move || {
+            let _ = std::io::Write::write_all(&mut std::fs::File::from(fd), uris.as_bytes());
+        });
+    }
+
+    fn finished(&mut self, _: Seat<Self>) {
+        println!("windows · the program took the files");
+        self.dropping = None;
+    }
+
+    fn cancelled(&mut self, _: Seat<Self>) {
+        println!("windows · the program did not take the files");
+        self.dropping = None;
+    }
+}
 
 impl DrmSyncobjHandler for State {
     fn drm_syncobj_state(&mut self) -> Option<&mut DrmSyncobjState> {
