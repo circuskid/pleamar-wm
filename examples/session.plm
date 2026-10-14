@@ -36,8 +36,8 @@
 //   Marea's panels come out of her: a drop, a neck, and it spreads into it.
 //   With the mouse: carry a window by its title bar (free), by the gap just
 //   above it (tiled), or from anywhere with Super held; let it go on another one
-//   and they change places (on the other monitor too: each takes the other's),
-//   or on an empty spot of the other monitor and it goes there. While
+//   and they change places, or anywhere on the other monitor —over a window
+//   of it too— and it goes there, among the ones it has. While
 //   carried, a strip at the top offers five layouts —a leader on the left,
 //   columns, rows, a grid, a leader on the right—: over one, the windows show
 //   how they would be; let go there, and that monitor keeps it.
@@ -435,14 +435,32 @@ scene Session {
     // and on its own the rest close up. Its turn there is its turn in the
     // order; first, if it is let go on a layout with a leader.
     let crossing = dragging >= 0 and mon != dsc and not dfl
-    // Over a window of the other monitor: they change places —and
-    // monitors—; there nothing makes room, and here nothing closes up.
-    let xswap = crossing and over >= 0
     let landing.place = if(leads, 0, (win.0.open and win.0.screen == mon and win.0.rank >= 0 and win.0.rank < ordD) + (win.1.open and win.1.screen == mon and win.1.rank >= 0 and win.1.rank < ordD) + (win.2.open and win.2.screen == mon and win.2.rank >= 0 and win.2.rank < ordD) + (win.3.open and win.3.screen == mon and win.3.rank >= 0 and win.3.rank < ordD) + (win.4.open and win.4.screen == mon and win.4.rank >= 0 and win.4.rank < ordD) + (win.5.open and win.5.screen == mon and win.5.rank >= 0 and win.5.rank < ordD) + (win.6.open and win.6.screen == mon and win.6.rank >= 0 and win.6.rank < ordD) + (win.7.open and win.7.screen == mon and win.7.rank >= 0 and win.7.rank < ordD) + (win.8.open and win.8.screen == mon and win.8.rank >= 0 and win.8.rank < ordD) + (win.9.open and win.9.screen == mon and win.9.rank >= 0 and win.9.rank < ordD) + (win.10.open and win.10.screen == mon and win.10.rank >= 0 and win.10.rank < ordD) + (win.11.open and win.11.screen == mon and win.11.rank >= 0 and win.11.rank < ordD) + (win.12.open and win.12.screen == mon and win.12.rank >= 0 and win.12.rank < ordD) + (win.13.open and win.13.screen == mon and win.13.rank >= 0 and win.13.rank < ordD) + (win.14.open and win.14.screen == mon and win.14.rank >= 0 and win.14.rank < ordD) + (win.15.open and win.15.screen == mon and win.15.rank >= 0 and win.15.rank < ordD))
     let landing.n = pick(mon, win.on.0, win.on.1, win.on.2, win.on.3) + 1
     let landing.lay = if(picked >= 0, picked, lay.here)
     // A window fullscreen on the monitor under the mouse: the ones below it keep off the keyboard.
     let fs.on = (win.0.fullscreen and win.0.screen == mon and win.0.rank >= 0) + (win.1.fullscreen and win.1.screen == mon and win.1.rank >= 0) + (win.2.fullscreen and win.2.screen == mon and win.2.rank >= 0) + (win.3.fullscreen and win.3.screen == mon and win.3.rank >= 0) + (win.4.fullscreen and win.4.screen == mon and win.4.rank >= 0) + (win.5.fullscreen and win.5.screen == mon and win.5.rank >= 0) + (win.6.fullscreen and win.6.screen == mon and win.6.rank >= 0) + (win.7.fullscreen and win.7.screen == mon and win.7.rank >= 0) + (win.8.fullscreen and win.8.screen == mon and win.8.rank >= 0) + (win.9.fullscreen and win.9.screen == mon and win.9.rank >= 0) + (win.10.fullscreen and win.10.screen == mon and win.10.rank >= 0) + (win.11.fullscreen and win.11.screen == mon and win.11.rank >= 0) + (win.12.fullscreen and win.12.screen == mon and win.12.rank >= 0) + (win.13.fullscreen and win.13.screen == mon and win.13.rank >= 0) + (win.14.fullscreen and win.14.screen == mon and win.14.rank >= 0) + (win.15.fullscreen and win.15.screen == mon and win.15.rank >= 0)
+    // Whether each window is maximized while tiled (see `maximize`, further down).
+    fact tmax.0 = 0
+    fact tmax.1 = 0
+    fact tmax.2 = 0
+    fact tmax.3 = 0
+    fact tmax.4 = 0
+    fact tmax.5 = 0
+    fact tmax.6 = 0
+    fact tmax.7 = 0
+    fact tmax.8 = 0
+    fact tmax.9 = 0
+    fact tmax.10 = 0
+    fact tmax.11 = 0
+    fact tmax.12 = 0
+    fact tmax.13 = 0
+    fact tmax.14 = 0
+    fact tmax.15 = 0
+    // And one maximized (`maximize`) over its monitor: the ones beneath it are
+    // covered, and the mouse going over where they are is not going to them
+    // (it took the keyboard, and the maximized one went back to its tile).
+    let max.on = (tmax.0 > 0.5 and win.0.screen == mon and win.0.rank >= 0 and not win.0.fullscreen and not win.0.minimized) + (tmax.1 > 0.5 and win.1.screen == mon and win.1.rank >= 0 and not win.1.fullscreen and not win.1.minimized) + (tmax.2 > 0.5 and win.2.screen == mon and win.2.rank >= 0 and not win.2.fullscreen and not win.2.minimized) + (tmax.3 > 0.5 and win.3.screen == mon and win.3.rank >= 0 and not win.3.fullscreen and not win.3.minimized) + (tmax.4 > 0.5 and win.4.screen == mon and win.4.rank >= 0 and not win.4.fullscreen and not win.4.minimized) + (tmax.5 > 0.5 and win.5.screen == mon and win.5.rank >= 0 and not win.5.fullscreen and not win.5.minimized) + (tmax.6 > 0.5 and win.6.screen == mon and win.6.rank >= 0 and not win.6.fullscreen and not win.6.minimized) + (tmax.7 > 0.5 and win.7.screen == mon and win.7.rank >= 0 and not win.7.fullscreen and not win.7.minimized) + (tmax.8 > 0.5 and win.8.screen == mon and win.8.rank >= 0 and not win.8.fullscreen and not win.8.minimized) + (tmax.9 > 0.5 and win.9.screen == mon and win.9.rank >= 0 and not win.9.fullscreen and not win.9.minimized) + (tmax.10 > 0.5 and win.10.screen == mon and win.10.rank >= 0 and not win.10.fullscreen and not win.10.minimized) + (tmax.11 > 0.5 and win.11.screen == mon and win.11.rank >= 0 and not win.11.fullscreen and not win.11.minimized) + (tmax.12 > 0.5 and win.12.screen == mon and win.12.rank >= 0 and not win.12.fullscreen and not win.12.minimized) + (tmax.13 > 0.5 and win.13.screen == mon and win.13.rank >= 0 and not win.13.fullscreen and not win.13.minimized) + (tmax.14 > 0.5 and win.14.screen == mon and win.14.rank >= 0 and not win.14.fullscreen and not win.14.minimized) + (tmax.15 > 0.5 and win.15.screen == mon and win.15.rank >= 0 and not win.15.fullscreen and not win.15.minimized)
 
     // ── pools: each monitor has its own, one below the other, as tide
     // pools are left along a shore. There are as many as hold windows, and
@@ -6271,10 +6289,10 @@ scene Session {
         // another window, monitor or layout, so it draws itself as it would
         // be instead of being stretched)
         let ord.me = win.$i.rank
-        let swaps = over == i and sc == mon
+        let swaps = over == i and sc == mon and not crossing
         let promoted = leads and not crossing and sc == dsc and dragging >= 0
-        let n.shown = max(if(crossing and not xswap and sc == mon, n + 1, if(crossing and not xswap and sc == dsc, n - 1, n)), 1)
-        let p.shown = if(dragging == i and promoted, 0, if(promoted, p + (p < dplace), if(swaps and not crossing, dplace, if(xswap, p, if(crossing and sc == mon, p + if(leads, 1, ordD < ord.me), if(crossing and sc == dsc, p - (ord.me > ordD), p))))))
+        let n.shown = max(if(crossing and sc == mon, n + 1, if(crossing and sc == dsc, n - 1, n)), 1)
+        let p.shown = if(dragging == i and promoted, 0, if(promoted, p + (p < dplace), if(swaps and not crossing, dplace, if(crossing and sc == mon, p + if(leads, 1, ordD < ord.me), if(crossing and sc == dsc, p - (ord.me > ordD), p)))))
         let L.shown = if(dragging >= 0 and picked >= 0 and sc == mon, picked, L)
         let Wsv = pick(sc, screen.0.width, screen.1.width, screen.2.width, screen.3.width) - pick(sc, win.reserved.0.left, win.reserved.1.left, win.reserved.2.left, win.reserved.3.left) - pick(sc, win.reserved.0.right, win.reserved.1.right, win.reserved.2.right, win.reserved.3.right)
         let Hsv = pick(sc, screen.0.height, screen.1.height, screen.2.height, screen.3.height) - pick(sc, win.reserved.0.top, win.reserved.1.top, win.reserved.2.top, win.reserved.3.top) - pick(sc, win.reserved.0.bottom, win.reserved.1.bottom, win.reserved.2.bottom, win.reserved.3.bottom)
@@ -6353,7 +6371,7 @@ scene Session {
         // others, which keep their places beneath. Again, back to its tile;
         // and so too when another one there takes the keyboard (it would be
         // under it), or when it is carried. ──
-        fact tmax.$i = 0
+        // (`tmax.$i` is declared further up, before `max.on`, which reads them all.)
         let tm = tmax.$i > 0.5 and F < 0.5 and not win.$i.fullscreen and not win.$i.dialog and not win.$i.minimized
         // (Free or floating, the same as its green button.)
         on maximize while win.focus == i and not win.$i.dialog and (F < 0.5 or fr) {
@@ -6633,7 +6651,7 @@ scene Session {
         // other monitor, if it is over that one.
         // (A prop is one for every monitor's copy: what it follows cannot
         // depend on which copy it is. Which monitor shows it goes in `show`.)
-        let hollow.there = dragging == i and crossing and not xswap
+        let hollow.there = dragging == i and crossing
         prop hollow.$i = 0 ~140ms
         follow hollow.$i = if(not fr and (swaps or (dragging == i and over < 0 and not crossing) or hollow.there), 1, 0)
         // (Its own place as it would be: in the layout picked, if one is.)
@@ -7011,10 +7029,12 @@ scene Session {
         }
         // Let go on another one (the one under it, as the others showed).
         on release title.$i while over >= 0 and not crossing { swap win.$i with win(over) }
-        // …and on one of the other monitor: each takes the other's place and
-        // monitor (the compositor sends both across).
-        on release title.$i while xswap {
-            swap win.$i with win(over)
+        // …and on one of the other monitor: it goes there, among the ones that
+        // monitor has (which made room for it while it was carried), as on an
+        // empty spot of it. Changing places across monitors left the one let
+        // go never where it was taken to, and took one away from there.
+        on release title.$i while crossing and over >= 0 {
+            send win.$i to mon
             landing = i
             landing.to = mon
         }
@@ -7115,7 +7135,7 @@ scene Session {
         // (Only the one entered gives it. The one left said «nobody» too, and
         // when both changed in the same round and the leaving one spoke last,
         // nobody had it: a click was needed.)
-        on change pointed while pointed and dragging < 0 and not overview and fs.on < 0.5 and pick(mon, free.0, free.1, free.2, free.3) < 0.5 {
+        on change pointed while pointed and dragging < 0 and not overview and fs.on < 0.5 and (max.on < 0.5 or tmax.$i > 0.5) and pick(mon, free.0, free.1, free.2, free.3) < 0.5 {
             focus win.$i
         }
     }
