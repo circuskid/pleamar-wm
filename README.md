@@ -86,9 +86,9 @@ Every release, with what changed: [Releases].
   it); a file dropped on it opens with it. Right click: keep it on the shore or
   let it go, and close its windows; drag it out of the shore and it bursts into
   drops, unpinned (`session.conf` keeps what you pin).
-- **Windows are born from the water**: a window that opens comes out of the
-  nearest edge of the monitor as a black drop, hanging by a neck, and spreads
-  into its place —the same water [Marea] comes out of—.
+- **Windows fill like a tank**: a window that opens appears where it goes and
+  the water comes up inside it, a wavy line with a bright edge, until in a
+  quarter of a second it is the window. One that closes drains the same way.
 - **Workspaces are tide pools**: each monitor has its own stack, as many as
   hold windows plus an empty one past the last; one left empty dries up.
   `Super+1…9` (that pool of the monitor under the mouse), `Super+Shift+1…9` to

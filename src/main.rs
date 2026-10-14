@@ -239,6 +239,7 @@ const DEFAULT_SCENE: &str = include_str!("../examples/session.plm");
 const DEFAULT_SHADERS: &[(&str, &str)] = &[
     ("shaders/rain.wgsl", include_str!("../examples/shaders/rain.wgsl")),
     ("shaders/snow.wgsl", include_str!("../examples/shaders/snow.wgsl")),
+    ("shaders/tide.wgsl", include_str!("../examples/shaders/tide.wgsl")),
 ];
 
 /// The scene and its shaders into `dir`. `refresh`: the runtime copy, kept the
