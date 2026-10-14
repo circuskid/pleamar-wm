@@ -2122,14 +2122,16 @@ checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
 name = "pleamar"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "arboard",
  "ash",
  "bytemuck",
  "chrono",
  "cosmic-text",
+ "glow",
  "image",
+ "khronos-egl",
  "lewton",
  "libc",
  "mlua",
@@ -2150,7 +2152,7 @@ dependencies = [
 
 [[package]]
 name = "pleamar-wm"
-version = "0.3.27"
+version = "0.3.28"
 dependencies = [
  "async-channel",
  "async-io",
@@ -2173,7 +2175,7 @@ dependencies = [
 
 [[package]]
 name = "pleamar-wm-stream"
-version = "0.3.27"
+version = "0.3.28"
 dependencies = [
  "ffmpeg-sys-next",
  "libc",
