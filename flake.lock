@@ -10,11 +10,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1791324272,
-        "narHash": "sha256-L3RjJb+E0cHUtg25zV6kYA7miVdjbTg/4hTUGiHzSmk=",
+        "lastModified": 1791976862,
+        "narHash": "sha256-0Kw9crEPVwVuSBjOHLIEroX+QWdaAD8lSWF23ZjfyqI=",
         "owner": "k4ditano",
         "repo": "marea-plm",
-        "rev": "0e23c6ce597644ba61d05a6931b9d50bdfa0d345",
+        "rev": "2b6a0649ec3a8d7d1122640c3f0d9b156bf56527",
         "type": "github"
       },
       "original": {
@@ -46,11 +46,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1791958392,
-        "narHash": "sha256-L56QMsIbKzoe6ABrPVE99wS9ETWZ4vijusCuBBMF2s0=",
+        "lastModified": 1791976838,
+        "narHash": "sha256-9etU4iDkDE/sesQOVK40ktI4pEDAv/Ypu5nudGAbdRM=",
         "owner": "k4ditano",
         "repo": "pleamar",
-        "rev": "27caa881ec4e2d772bf0ba241bacbddf785a463b",
+        "rev": "953b1b449001d9df1a7e71808d2dc19cd3ef6b13",
         "type": "github"
       },
       "original": {
