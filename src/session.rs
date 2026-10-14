@@ -116,13 +116,19 @@ impl DrmOutput {
     fn make_buffers(&mut self, device: &wgpu::Device, modifiers: &[u64]) -> Result<(), String> {
         let (w, h) = self.size;
         let wanted: Vec<u64> = if modifiers.is_empty() { vec![0] } else { modifiers.to_vec() };
+        // On OpenGL (a card whose Vulkan driver names no layouts, see
+        // pleamar's `Gpu::new`), the buffers are laid out as the driver likes,
+        // without naming it, and EGL takes them the same way.
+        // SAFETY: only asking which side the device runs on.
+        let gl = unsafe { device.as_hal::<wgpu::hal::api::Gles>() }.is_some();
         for _ in 0..3 {
-            let bo = self
-                .gbm
-                .lock()
-                .unwrap()
-                .create_buffer_object_with_modifiers2::<()>(w, h, gbm::Format::Xrgb8888, wanted.iter().map(|m| gbm::Modifier::from(*m)), gbm::BufferObjectFlags::SCANOUT | gbm::BufferObjectFlags::RENDERING)
-                .map_err(|e| format!("the card did not make a buffer of {w}×{h}: {e}"))?;
+            let uses = gbm::BufferObjectFlags::SCANOUT | gbm::BufferObjectFlags::RENDERING;
+            let made = if gl {
+                self.gbm.lock().unwrap().create_buffer_object::<()>(w, h, gbm::Format::Xrgb8888, uses)
+            } else {
+                self.gbm.lock().unwrap().create_buffer_object_with_modifiers2::<()>(w, h, gbm::Format::Xrgb8888, wanted.iter().map(|m| gbm::Modifier::from(*m)), uses)
+            };
+            let bo = made.map_err(|e| format!("the card did not make a buffer of {w}×{h}: {e}"))?;
             let fd = bo.fd_for_plane(0).map_err(|e| format!("no handle for the buffer: {e}"))?;
             let modifier: u64 = bo.modifier().into();
             let texture = pleamar::gpu::Gpu::import_dmabuf(
@@ -140,7 +146,11 @@ impl DrmOutput {
             let fb = self.drm.add_planar_framebuffer(&bo, flags).map_err(|e| format!("the monitor does not take the buffer: {e}"))?;
             self.buffers.push(Buffer { _bo: bo, fb, texture });
         }
-        println!("session · {}: {w}×{h} at {} Hz, three buffers of the card (modifier {:#x})", self.name, self.mode.vrefresh(), wanted[0]);
+        if gl {
+            println!("session · {}: {w}×{h} at {} Hz, three buffers of the card, laid out as its driver likes (OpenGL)", self.name, self.mode.vrefresh());
+        } else {
+            println!("session · {}: {w}×{h} at {} Hz, three buffers of the card (modifier {:#x})", self.name, self.mode.vrefresh(), wanted[0]);
+        }
         Ok(())
     }
 }
