@@ -362,8 +362,16 @@ scene Session {
     // behind, as water on a pane that is moved does.
     prop lag.x = 0 ~140ms
     prop lag.y = 0 ~140ms
-    follow lag.x = mouse.x
-    follow lag.y = mouse.y
+    // Only while one is carried does anything read it: the rest of the time it
+    // stands still. Chasing the mouse all day, each move of it was the whole
+    // scene going round at the monitor's pace for 140 ms, painting nothing.
+    let lagging = dragging >= 0 or landing >= 0
+    follow lag.x = if(lagging, mouse.x, lag.x)
+    follow lag.y = if(lagging, mouse.y, lag.y)
+    on change dragging while dragging >= 0 {
+        lag.x: mouse.x ~0ms
+        lag.y: mouse.y ~0ms
+    }
 
     // ── the desk ──
     // Nothing: the wallpaper is a program's (swaybg, below everything). Only
