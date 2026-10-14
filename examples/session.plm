@@ -6379,7 +6379,12 @@ scene Session {
             wave.$i: 0 ~0ms
             wave.$i: 1 after 16ms
         }
-        on change win.focus while tmax.$i > 0.5 and win.focus >= 0 and win.focus != i and fscreen == sc and focus.pool == win.$i.pool and not focus.dialog and not focus.floats { tmax.$i = 0 }
+        // (Read here from `win.focus` itself, not through `fscreen` and the
+        // others: a rule that follows a fact sees the `let`s made from it as
+        // they were before it changed. The keyboard going to a window on the
+        // other monitor looked like one on this one, and the maximized window
+        // went back to its tile.)
+        on change win.focus while tmax.$i > 0.5 and win.focus >= 0 and win.focus != i and pick(win.focus, win.0.screen, win.1.screen, win.2.screen, win.3.screen, win.4.screen, win.5.screen, win.6.screen, win.7.screen, win.8.screen, win.9.screen, win.10.screen, win.11.screen, win.12.screen, win.13.screen, win.14.screen, win.15.screen) == sc and pick(win.focus, win.0.pool, win.1.pool, win.2.pool, win.3.pool, win.4.pool, win.5.pool, win.6.pool, win.7.pool, win.8.pool, win.9.pool, win.10.pool, win.11.pool, win.12.pool, win.13.pool, win.14.pool, win.15.pool) == win.$i.pool and not pick(win.focus, win.0.dialog, win.1.dialog, win.2.dialog, win.3.dialog, win.4.dialog, win.5.dialog, win.6.dialog, win.7.dialog, win.8.dialog, win.9.dialog, win.10.dialog, win.11.dialog, win.12.dialog, win.13.dialog, win.14.dialog, win.15.dialog) and not pick(win.focus, win.0.floating, win.1.floating, win.2.floating, win.3.floating, win.4.floating, win.5.floating, win.6.floating, win.7.floating, win.8.floating, win.9.floating, win.10.floating, win.11.floating, win.12.floating, win.13.floating, win.14.floating, win.15.floating) { tmax.$i = 0 }
         on change dragging while dragging == i { tmax.$i = 0 }
         // Put away, it stays where it was (the others close up without it),
         // and flies from there into Marea's island.
@@ -7697,7 +7702,8 @@ scene Session {
         ph.cards = 0
     }
     // The one with the keyboard on the phone is the one in front.
-    on change win.focus while phone >= 0 and win.focus >= 0 and fscreen == phone and not focus.dialog {
+    // (`win.focus` itself, not `fscreen`: see the maximized window's rule.)
+    on change win.focus while phone >= 0 and win.focus >= 0 and pick(win.focus, win.0.screen, win.1.screen, win.2.screen, win.3.screen, win.4.screen, win.5.screen, win.6.screen, win.7.screen, win.8.screen, win.9.screen, win.10.screen, win.11.screen, win.12.screen, win.13.screen, win.14.screen, win.15.screen) == phone and not pick(win.focus, win.0.dialog, win.1.dialog, win.2.dialog, win.3.dialog, win.4.dialog, win.5.dialog, win.6.dialog, win.7.dialog, win.8.dialog, win.9.dialog, win.10.dialog, win.11.dialog, win.12.dialog, win.13.dialog, win.14.dialog, win.15.dialog) {
         // Two side by side and the other one touched: it is in front now,
         // and the one that was, beside it (each stays on its side).
         ph.fl = if(ph.split and win.focus == ph.sd, 1 - ph.fl, ph.fl)
