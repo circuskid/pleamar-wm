@@ -6365,6 +6365,10 @@ scene Session {
         // (Only once it has a place of its own on this monitor: the frame free
         // is taken, it has none yet, and it headed for the corner.)
         let fr = F > 0.5 and fw.$i > 0.5 and fsc.$i == sc and not win.$i.fullscreen and not win.$i.dialog
+        // Free, it has our title bar if the program lets us draw its frame;
+        // one that draws its own (a GTK 4 header bar, a browser's tabs) is
+        // carried and stretched from its own (`handle:`, on the zones below).
+        let ours = F > 0.5 and win.$i.framed
         // Never lost: no bigger than its monitor, and always with a good
         // piece of it —and all of its title bar— inside, to take it by.
         // (Free, the shore at the bottom is kept clear.)
@@ -6470,7 +6474,7 @@ scene Session {
         // Carried at a glance over the cards, it shrinks towards them.
         prop ovcarry.$i = 0 ~pop
         follow ovcarry.$i = if(ovdrag == i and on.col, 1, 0)
-        follow hb.$i = if(F > 0.5, 1, 0)
+        follow hb.$i = if(ours, 1, 0)
         // ── a window that opens fills where it goes, like a tank: the water
         // comes up from the bottom with a wavy line and a bright edge where it
         // meets the air (shaders/tide.wgsl); one that closes drains the same
@@ -6596,12 +6600,15 @@ scene Session {
             // above it, which takes nothing from the program.
             // With Super held, all of it.
             let whole = keys.super > 0.5 or dragging == i
-            zone box title.$i { from: x.$i + if(whole or F > 0.5, 0, 12), y.$i - if(whole or F > 0.5, 0, gap - 1); size: if(whole, w, if(F > 0.5, w - 76, w - 24)), if(whole, h, if(F > 0.5, tb, gap - 2)); cursor: pointer; active: here and not overview and not win.$i.dialog; label: "{win.$i.title}"; role: button }
-            zone ellipse lead_zone.$i { at: x + w - 40, y + tb / 2; radius: 10; cursor: pointer; active: here and not overview and not win.$i.dialog and F > 0.5; label: "Enlarge {win.$i.title}" }
-            zone ellipse mini_zone.$i { at: x + w - 60, y + tb / 2; radius: 10; cursor: pointer; active: here and not overview and not win.$i.dialog and Fm > 0.5; label: "Minimize {win.$i.title}" }
-            zone ellipse close_zone.$i { at: x + w - 20, y + tb / 2; radius: 10; cursor: pointer; active: here and not overview and not win.$i.dialog and F > 0.5; label: "Close {win.$i.title}" }
+            zone box title.$i { from: x.$i + if(whole or F > 0.5, 0, 12), y.$i - if(whole or F > 0.5, 0, gap - 1); size: if(whole, w, if(F > 0.5, w - 76, w - 24)), if(whole, h, if(F > 0.5, tb, gap - 2)); cursor: pointer; active: here and not overview and not win.$i.dialog and (ours or F < 0.5 or whole or win.$i.held > 0.5); label: "{win.$i.title}"; role: button; handle: i }
+            zone ellipse lead_zone.$i { at: x + w - 40, y + tb / 2; radius: 10; cursor: pointer; active: here and not overview and not win.$i.dialog and ours; label: "Enlarge {win.$i.title}" }
+            zone ellipse mini_zone.$i { at: x + w - 60, y + tb / 2; radius: 10; cursor: pointer; active: here and not overview and not win.$i.dialog and Fm > 0.5 and ours; label: "Minimize {win.$i.title}" }
+            zone ellipse close_zone.$i { at: x + w - 20, y + tb / 2; radius: 10; cursor: pointer; active: here and not overview and not win.$i.dialog and ours; label: "Close {win.$i.title}" }
             // At a glance, the whole window is a button: pressing it chooses it.
             zone box choose.$i { from: x, y; size: w, h; cursor: pointer; active: here and overview and not win.$i.dialog; label: "{win.$i.title}"; role: item }
+            // (A program that draws its own title bar and edges —a GTK 4
+            // header bar, a browser's tabs— asks to be carried or stretched
+            // from them: `handle:` says which of these is pressed for it.)
             // Free: its edges and its corner make it bigger or smaller.
             // (While it is being resized, where they were when taken: a drag
             // goes on while its zone holds the point it was pressed on.)
@@ -6609,10 +6616,10 @@ scene Session {
             let ey = if(sizing == i, g.y, y)
             let ew = if(sizing == i, g.w, w)
             let eh = if(sizing == i, g.h, h)
-            zone box left_edge.$i { from: ex - 5, ey + tb; size: 10, eh - tb - 12; cursor: grab; active: here and fr and not maxed.$i and not overview; label: "Resize {win.$i.title}"; role: region }
-            zone box right_edge.$i { from: ex + ew - 5, ey + tb; size: 10, eh - tb - 12; cursor: grab; active: here and fr and not maxed.$i and not overview; label: "Resize {win.$i.title}"; role: region }
-            zone box bottom_edge.$i { from: ex + 12, ey + eh - 5; size: ew - 24, 10; cursor: grab; active: here and fr and not maxed.$i and not overview; label: "Resize {win.$i.title}"; role: region }
-            zone box corner.$i { from: ex + ew - 14, ey + eh - 14; size: 20, 20; cursor: grab; active: here and fr and not maxed.$i and not overview; label: "Resize {win.$i.title}"; role: region }
+            zone box left_edge.$i { from: ex - 5, ey + tb; size: 10, eh - tb - 12; cursor: grab; active: here and fr and not maxed.$i and not overview; label: "Resize {win.$i.title}"; role: region; handle: i, left }
+            zone box right_edge.$i { from: ex + ew - 5, ey + tb; size: 10, eh - tb - 12; cursor: grab; active: here and fr and not maxed.$i and not overview; label: "Resize {win.$i.title}"; role: region; handle: i, right }
+            zone box bottom_edge.$i { from: ex + 12, ey + eh - 5; size: ew - 24, 10; cursor: grab; active: here and fr and not maxed.$i and not overview; label: "Resize {win.$i.title}"; role: region; handle: i, bottom }
+            zone box corner.$i { from: ex + ew - 14, ey + eh - 14; size: 20, 20; cursor: grab; active: here and fr and not maxed.$i and not overview; label: "Resize {win.$i.title}"; role: region; handle: i, bottom_right }
         }
         group {
             // Over the others as it was last touched (free, they overlap).
@@ -6651,7 +6658,7 @@ scene Session {
                 clip box { from: x, y; size: w, h; corner: 12 }
                 box { from: x, y; size: w, tb * hb.$i; color: mix(#1a1e22, #1d2b27, lit.$i); show: hb.$i > 0.01 }
                 text win.$i.title { at: x + 14, y + tb / 2 - tb * (1 - hb.$i); anchor: left center; size: 12; weight: 500; width: max(w - 110, 10); lines: 1; color: ink; opacity: (55% + 45% * lit.$i) * hb.$i; show: hb.$i > 0.01 }
-                window win.$i { at: x, y + tb * hb.$i; size: w, max(h - tb * hb.$i, 1); ask: goal.w, goal.h - tb * (F > 0.5); show: drawn and not win.$i.fullscreen and wet <= 0.001 and cold <= 0.001 }
+                window win.$i { at: x, y + tb * hb.$i; size: w, max(h - tb * hb.$i, 1); ask: goal.w, goal.h - tb * ours; show: drawn and not win.$i.fullscreen and wet <= 0.001 and cold <= 0.001 }
             }
             // The same, in the rain: the window seen through wet glass.
             group {
@@ -6660,7 +6667,7 @@ scene Session {
                 clip box { from: x, y; size: w, h; corner: 12 }
                 box { from: x, y; size: w, tb * hb.$i; color: mix(#1a1e22, #1d2b27, lit.$i); show: hb.$i > 0.01 }
                 text win.$i.title { at: x + 14, y + tb / 2 - tb * (1 - hb.$i); anchor: left center; size: 12; weight: 500; width: max(w - 110, 10); lines: 1; color: ink; opacity: (55% + 45% * lit.$i) * hb.$i; show: hb.$i > 0.01 }
-                window win.$i { at: x, y + tb * hb.$i; size: w, max(h - tb * hb.$i, 1); ask: goal.w, goal.h - tb * (F > 0.5); show: drawn and not win.$i.fullscreen and wet > 0.001 }
+                window win.$i { at: x, y + tb * hb.$i; size: w, max(h - tb * hb.$i, 1); ask: goal.w, goal.h - tb * ours; show: drawn and not win.$i.fullscreen and wet > 0.001 }
             }
             // And in the snow: frosted glass with snow on top.
             group {
@@ -6669,7 +6676,7 @@ scene Session {
                 clip box { from: x, y; size: w, h; corner: 12 }
                 box { from: x, y; size: w, tb * hb.$i; color: mix(#1a1e22, #1d2b27, lit.$i); show: hb.$i > 0.01 }
                 text win.$i.title { at: x + 14, y + tb / 2 - tb * (1 - hb.$i); anchor: left center; size: 12; weight: 500; width: max(w - 110, 10); lines: 1; color: ink; opacity: (55% + 45% * lit.$i) * hb.$i; show: hb.$i > 0.01 }
-                window win.$i { at: x, y + tb * hb.$i; size: w, max(h - tb * hb.$i, 1); ask: goal.w, goal.h - tb * (F > 0.5); show: drawn and not win.$i.fullscreen and cold > 0.001 and wet <= 0.001 }
+                window win.$i { at: x, y + tb * hb.$i; size: w, max(h - tb * hb.$i, 1); ask: goal.w, goal.h - tb * ours; show: drawn and not win.$i.fullscreen and cold > 0.001 and wet <= 0.001 }
             }
             // (The wave: two soft crests of light, the second behind the first.)
             group {
