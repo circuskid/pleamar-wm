@@ -8390,8 +8390,11 @@ scene Session {
         // of its pictures made each of them be drawn again without it,
         // instead of read straight from what was put together.
         open: remote.shown > 0.001 and screen.index != phone
-        let rm.w = remote_mark.width
-        let rm.h = remote_mark.height
+        // Each copy its own monitor's size: `remote_mark.width` is one for all
+        // of them, the last measured, and with a phone's monitor there the
+        // desk got an amber frame the size of the phone in its corner.
+        let rm.w = screen.width
+        let rm.h = screen.height
         let rm.here = remote.screen == screen.index
         group {
             opacity: remote.shown * if(rm.here, 1, 0.45)
