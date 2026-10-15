@@ -15,6 +15,8 @@
   libgbm,
   libdrm,
   vulkan-loader,
+  mesa,
+  libglvnd,
   fontconfig,
   xwayland,
   swaybg,
@@ -57,6 +59,10 @@ rustPlatform.buildRustPackage {
     systemdLibs
     libgbm
     libdrm
+    # When the session's Vulkan cannot take the monitors' buffers (#2), it
+    # runs on OpenGL: EGL through libglvnd, and mesa behind it.
+    mesa
+    libglvnd
     pam
     pipewire
     # `pleamar-wm remote`'s direct way (WebRTC) encrypts with it.
@@ -94,6 +100,8 @@ rustPlatform.buildRustPackage {
           vulkan-loader
           wayland
           libxkbcommon
+          mesa
+          libglvnd
         ]
       } \
       --prefix PATH : ${
