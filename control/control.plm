@@ -1,0 +1,356 @@
+// pleamar-wm's control centre: how each monitor lays its windows out, and
+// what each key does in each layout. `pleamar-wm control` opens it.
+//
+// A layout picked here applies at once to that monitor and is written in
+// session.conf (`layout MONITOR NAME`), so the next session starts with it.
+// The logic does both through pleamar-wm itself (`control.luau`).
+language 0.4
+scene Control {
+    surface { size: 1060, 700; kind: window; title: "Control centre · pleamar-wm" }
+    permissions { run: "pleamar-wm" }
+
+    let ink = #f5f7f5
+    let mint = #9ed6bd
+    let coal = #121313
+    let card = #191d1c
+    let dim = #a7b0ad
+    let W = screen.width
+    let H = screen.height
+    // Where the pages start, right of the sidebar.
+    let px = 264
+
+    fact page = 0                  // 0 layouts · 1 keys · 2 about
+    fact has.0 = false             // a monitor there (by the session's order)
+    fact has.1 = false
+    fact has.2 = false
+    fact has.3 = false
+    fact sel.0 = -1                // its layout now: 0…7, 8 free; -1 not known yet
+    fact sel.1 = -1
+    fact sel.2 = -1
+    fact sel.3 = -1
+    fact toasted = 0               // counts what was saved: each one shows the note
+    fact reachable = true          // pleamar-wm answers (it is a session of its own)
+    text mon.0 = ""
+    text mon.1 = ""
+    text mon.2 = ""
+    text mon.3 = ""
+    text now.0 = ""
+    text now.1 = ""
+    text now.2 = ""
+    text now.3 = ""
+    text toast = ""
+    text version = ""
+    fact peek = -1                 // the layout the preview shows: the one under the mouse
+    event pick ->                  // monitor × 10 + layout
+    event go ->                    // a page
+
+    prop note = 0 ~calm
+    follow note = if(toasted > 0, 1, 0)
+    on change toasted { note: 1 }
+    on still toasted for 2600ms { note: 0 }
+
+    // ── the window: coal, a little light from the top right ──
+    body {
+        gradient: radial W * 0.85, -80 radius max(W, H), #1c2623, coal
+        box { from: 0, 0; size: W, H }
+    }
+
+    // ── the sidebar ──
+    box { from: 0, 0; size: 232, H; color: #0d0f0e; opacity: 72% }
+    box { from: 232, 0; size: 1, H; color: ink; opacity: 7% }
+    // A drop, as pleamar's own, and the names.
+    path {
+        at: 44, 54
+        color: mint
+        move 0, -13
+        curve -8, 2 via -7, -5
+        curve 0, 11 via -9, 10
+        curve 8, 2 via 9, 10
+        curve 0, -13 via 7, -5
+        close
+    }
+    text "Control centre" { at: 64, 44; size: 17; weight: 700; color: ink }
+    text "pleamar-wm" { at: 64, 64; size: 11.5; color: mint; opacity: 85% }
+
+    repeat k in 0..3 {
+        group {
+            prop on = 0 ~calm
+            follow on = if(page == k, 1, 0)
+            zone box nav { from: 16, 108 + k * 44; size: 200, 36; corner: 10; cursor: pointer; label: "A page" }
+            box { from: 16, 108 + k * 44; size: 200, 36; corner: 10; color: mint; opacity: 16% * on + 5% * nav.hover * (1 - on) }
+            box { from: 16, 114 + k * 44; size: 3, 24; corner: 1.5; color: mint; opacity: on }
+            on press nav { emit go(k) }
+        }
+    }
+    // The pages' names and their marks.
+    group {
+        // Layouts: three tiles.
+        box { from: 32, 119; size: 7, 14; corner: 2; color: mix(dim, mint, page == 0) }
+        box { from: 41, 119; size: 7, 6; corner: 2; color: mix(dim, mint, page == 0) }
+        box { from: 41, 127; size: 7, 6; corner: 2; color: mix(dim, mint, page == 0) }
+        text "Layouts" { at: 60, 126; anchor: left center; size: 13.5; weight: 600; color: mix(dim, ink, page == 0) }
+        // Keys: a key.
+        box { from: 31, 163; size: 18, 14; corner: 3; stroke: 1.5; color: mix(dim, mint, page == 1) }
+        box { from: 36, 172; size: 8, 2; corner: 1; color: mix(dim, mint, page == 1) }
+        text "Keys" { at: 60, 170; anchor: left center; size: 13.5; weight: 600; color: mix(dim, ink, page == 1) }
+        // About: a ring.
+        ellipse { at: 40, 214; radius: 7.5; stroke: 1.5; color: mix(dim, mint, page == 2) }
+        box { from: 39.2, 212; size: 1.6, 6; corner: 0.8; color: mix(dim, mint, page == 2) }
+        ellipse { at: 40, 209.5; radius: 1; color: mix(dim, mint, page == 2) }
+        text "About" { at: 60, 214; anchor: left center; size: 13.5; weight: 600; color: mix(dim, ink, page == 2) }
+    }
+    text "Changes apply at once and are kept for the next session." { at: 28, H - 70; size: 11; color: dim; opacity: 70%; width: 180; line_height: 1.35 }
+
+    // ── Layouts ──
+    group {
+        show: page == 0
+        text "Layouts" { at: px, 44; size: 24; weight: 700; color: ink }
+        text "How each monitor lays its windows out. Super+W still turns any of them free and back." { at: px, 74; size: 12.5; color: dim }
+        text "pleamar-wm does not answer: the control centre works inside a pleamar-wm session." { at: px, 120; size: 13; color: #ef7a66; show: not reachable }
+
+        repeat k in 0..4 {
+            let here = pick(k, has.0, has.1, has.2, has.3)
+            let sel = pick(k, sel.0, sel.1, sel.2, sel.3)
+            let y = 108 + k * 150
+            group {
+                show: here
+                body {
+                    color: card
+                    rim: 12%
+                    shadow: 0, 10, 26, 35%
+                    box { from: px - 4, y; size: W - px - 24, 136; corner: 16 }
+                }
+                // The monitor: its shape, its name, and what it is now.
+                box { from: px + 16, y + 18; size: 26, 17; corner: 3; stroke: 1.5; color: mint }
+                box { from: px + 26, y + 36; size: 6, 3; corner: 1; color: mint }
+                text pick(k, mon.0, mon.1, mon.2, mon.3) { at: px + 54, y + 27; anchor: left center; size: 15; weight: 650; color: ink }
+                text pick(k, now.0, now.1, now.2, now.3) { at: W - 46, y + 27; anchor: right center; size: 12; color: mint }
+
+                repeat l in 0..9 {
+                    let tx = px + 16 + l * 82
+                    let ty = y + 48
+                    group {
+                        prop on = 0 ~calm
+                        follow on = if(sel == l, 1, 0)
+                        zone box tile { from: tx, ty; size: 74, 76; corner: 12; cursor: pointer; label: "A layout" }
+                        box { from: tx, ty; size: 74, 76; corner: 12; color: mix(#232826, mint, 0.18 * on); opacity: 100% }
+                        box { from: tx, ty; size: 74, 76; corner: 12; color: ink; opacity: 5% * tile.hover * (1 - on) }
+                        box { from: tx, ty; size: 74, 76; corner: 12; stroke: 1.5; color: mint; opacity: 85% * on }
+                        on press tile { emit pick(k * 10 + l) }
+                        on change tile.hover while tile.hover > 0.5 { peek = l }
+                        on change tile.hover while tile.hover < 0.5 and peek == l { peek = -1 }
+
+                        // Each one's picture, 48 × 30, as the strip at the top shows it.
+                        let ix = tx + 13
+                        let iy = ty + 12
+                        let ic = mix(#cfd6d3, ink, on)
+                        group {
+                            opacity: 70% + 30% * on
+                            // leader
+                            box { from: ix, iy; size: 26, 30; corner: 3; color: ic; show: l == 0 }
+                            box { from: ix + 28, iy; size: 20, 14; corner: 3; color: ic; show: l == 0 }
+                            box { from: ix + 28, iy + 16; size: 20, 14; corner: 3; color: ic; show: l == 0 }
+                            // columns
+                            box { from: ix, iy; size: 14, 30; corner: 3; color: ic; show: l == 1 }
+                            box { from: ix + 17, iy; size: 14, 30; corner: 3; color: ic; show: l == 1 }
+                            box { from: ix + 34, iy; size: 14, 30; corner: 3; color: ic; show: l == 1 }
+                            // rows
+                            box { from: ix, iy; size: 48, 8.6; corner: 2; color: ic; show: l == 2 }
+                            box { from: ix, iy + 10.7; size: 48, 8.6; corner: 2; color: ic; show: l == 2 }
+                            box { from: ix, iy + 21.4; size: 48, 8.6; corner: 2; color: ic; show: l == 2 }
+                            // grid
+                            box { from: ix, iy; size: 23, 14; corner: 3; color: ic; show: l == 3 }
+                            box { from: ix + 25, iy; size: 23, 14; corner: 3; color: ic; show: l == 3 }
+                            box { from: ix, iy + 16; size: 23, 14; corner: 3; color: ic; show: l == 3 }
+                            box { from: ix + 25, iy + 16; size: 23, 14; corner: 3; color: ic; show: l == 3 }
+                            // leader right
+                            box { from: ix, iy; size: 20, 14; corner: 3; color: ic; show: l == 4 }
+                            box { from: ix, iy + 16; size: 20, 14; corner: 3; color: ic; show: l == 4 }
+                            box { from: ix + 22, iy; size: 26, 30; corner: 3; color: ic; show: l == 4 }
+                            // scrolling
+                            box { from: ix, iy; size: 20, 30; corner: 3; color: ic; show: l == 5 }
+                            box { from: ix + 22, iy; size: 20, 30; corner: 3; color: ic; show: l == 5 }
+                            box { from: ix + 44, iy; size: 4, 30; corner: 2; color: ic; opacity: 45%; show: l == 5 }
+                            // marea
+                            box { from: ix, iy; size: 26, 26; corner: 3; color: ic; show: l == 6 }
+                            box { from: ix + 28, iy; size: 12, 26; corner: 3; color: ic; show: l == 6 }
+                            box { from: ix + 42, iy; size: 6, 26; corner: 2; color: ic; show: l == 6 }
+                            box { from: ix, iy + 28; size: 48, 2.5; corner: 1.2; color: mint; show: l == 6 }
+                            // fractal
+                            box { from: ix, iy; size: 22, 30; corner: 3; color: ic; show: l == 7 }
+                            box { from: ix + 24, iy; size: 24, 14; corner: 3; color: ic; show: l == 7 }
+                            box { from: ix + 24, iy + 16; size: 11, 14; corner: 2; color: ic; show: l == 7 }
+                            box { from: ix + 37, iy + 16; size: 11, 6; corner: 1.5; color: ic; show: l == 7 }
+                            box { from: ix + 37, iy + 24; size: 11, 6; corner: 1.5; color: ic; show: l == 7 }
+                            // free: two windows, one over the other
+                            box { from: ix + 2, iy + 2; size: 30, 20; corner: 3; color: ic; opacity: 55%; show: l == 8 }
+                            box { from: ix + 16, iy + 9; size: 30, 20; corner: 3; color: ic; show: l == 8 }
+                            box { from: ix + 16, iy + 9; size: 30, 4; corner: 2; color: mint; opacity: 80%; show: l == 8 }
+                        }
+                        // Its name.
+                        text "Leader" { at: tx + 37, ty + 60; anchor: center; size: 10.5; weight: 600; color: mix(dim, ink, on); show: l == 0 }
+                        text "Columns" { at: tx + 37, ty + 60; anchor: center; size: 10.5; weight: 600; color: mix(dim, ink, on); show: l == 1 }
+                        text "Rows" { at: tx + 37, ty + 60; anchor: center; size: 10.5; weight: 600; color: mix(dim, ink, on); show: l == 2 }
+                        text "Grid" { at: tx + 37, ty + 60; anchor: center; size: 10.5; weight: 600; color: mix(dim, ink, on); show: l == 3 }
+                        text "Leader right" { at: tx + 37, ty + 60; anchor: center; size: 10; weight: 600; color: mix(dim, ink, on); show: l == 4 }
+                        text "Scrolling" { at: tx + 37, ty + 60; anchor: center; size: 10.5; weight: 600; color: mix(dim, ink, on); show: l == 5 }
+                        text "Marea" { at: tx + 37, ty + 60; anchor: center; size: 10.5; weight: 600; color: mix(dim, ink, on); show: l == 6 }
+                        text "Fractal" { at: tx + 37, ty + 60; anchor: center; size: 10.5; weight: 600; color: mix(dim, ink, on); show: l == 7 }
+                        text "Free" { at: tx + 37, ty + 60; anchor: center; size: 10.5; weight: 600; color: mix(dim, ink, on); show: l == 8 }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── the preview: four windows as the layout under the mouse (or the
+    // first monitor's) would put them, moving there as they would ──
+    let monitors = has.0 + has.1 + has.2 + has.3
+    let shown.l = if(peek >= 0, peek, sel.0)
+    let pfy = 132 + monitors * 150
+    let pfw = min(W - px - 24, (H - pfy - 60) * 16 / 9)
+    let pfh = pfw * 9 / 16
+    let pfx = px - 4
+        prop pv.0.x = 0 ~calm
+        follow pv.0.x = pick(max(shown.l, 0), 0.0000, 0.0000, 0.0000, 0.0000, 0.4400, -0.3000, 0.0000, 0.0000, 0.0400)
+        prop pv.0.y = 0 ~calm
+        follow pv.0.y = pick(max(shown.l, 0), 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0600)
+        prop pv.0.w = 0 ~calm
+        follow pv.0.w = pick(max(shown.l, 0), 0.5600, 0.2500, 1.0000, 0.5000, 0.5600, 0.5000, 0.4800, 0.5000, 0.5000)
+        prop pv.0.h = 0 ~calm
+        follow pv.0.h = pick(max(shown.l, 0), 1.0000, 1.0000, 0.2500, 0.5000, 1.0000, 1.0000, 1.0000, 1.0000, 0.5500)
+        prop pv.1.x = 0 ~calm
+        follow pv.1.x = pick(max(shown.l, 0), 0.5600, 0.2500, 0.0000, 0.5000, 0.0000, 0.2000, 0.4800, 0.5000, 0.3000)
+        prop pv.1.y = 0 ~calm
+        follow pv.1.y = pick(max(shown.l, 0), 0.0000, 0.0000, 0.2500, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.2200)
+        prop pv.1.w = 0 ~calm
+        follow pv.1.w = pick(max(shown.l, 0), 0.4400, 0.2500, 1.0000, 0.5000, 0.4400, 0.5000, 0.2000, 0.5000, 0.4600)
+        prop pv.1.h = 0 ~calm
+        follow pv.1.h = pick(max(shown.l, 0), 0.3333, 1.0000, 0.2500, 0.5000, 0.3333, 1.0000, 1.0000, 0.5000, 0.5000)
+        prop pv.2.x = 0 ~calm
+        follow pv.2.x = pick(max(shown.l, 0), 0.5600, 0.5000, 0.0000, 0.0000, 0.0000, 0.7000, 0.6800, 0.5000, 0.5500)
+        prop pv.2.y = 0 ~calm
+        follow pv.2.y = pick(max(shown.l, 0), 0.3333, 0.0000, 0.5000, 0.5000, 0.3333, 0.0000, 0.0000, 0.5000, 0.1200)
+        prop pv.2.w = 0 ~calm
+        follow pv.2.w = pick(max(shown.l, 0), 0.4400, 0.2500, 1.0000, 0.5000, 0.4400, 0.5000, 0.1600, 0.2500, 0.4000)
+        prop pv.2.h = 0 ~calm
+        follow pv.2.h = pick(max(shown.l, 0), 0.3333, 1.0000, 0.2500, 0.5000, 0.3333, 1.0000, 1.0000, 0.5000, 0.4200)
+        prop pv.3.x = 0 ~calm
+        follow pv.3.x = pick(max(shown.l, 0), 0.5600, 0.7500, 0.0000, 0.5000, 0.0000, 1.2000, 0.8400, 0.7500, 0.1800)
+        prop pv.3.y = 0 ~calm
+        follow pv.3.y = pick(max(shown.l, 0), 0.6667, 0.0000, 0.7500, 0.5000, 0.6667, 0.0000, 0.0000, 0.5000, 0.5000)
+        prop pv.3.w = 0 ~calm
+        follow pv.3.w = pick(max(shown.l, 0), 0.4400, 0.2500, 1.0000, 0.5000, 0.4400, 0.5000, 0.1600, 0.2500, 0.4200)
+        prop pv.3.h = 0 ~calm
+        follow pv.3.h = pick(max(shown.l, 0), 0.3333, 1.0000, 0.2500, 0.5000, 0.3333, 1.0000, 1.0000, 0.5000, 0.4200)
+    group {
+        show: page == 0 and monitors > 0 and pfh > 120
+        text "Preview" { at: px, pfy - 14; size: 12.5; weight: 650; color: dim }
+        body {
+            color: #0c0f0e
+            rim: 10%
+            box { from: pfx, pfy; size: pfw, pfh; corner: 14 }
+        }
+            group {
+                clip box { from: pfx, pfy; size: pfw, pfh; corner: 10 }
+                body {
+                    color: if(0 == 0, #2b3532, #232a28)
+                    rim: 14%
+                    shadow: 0, 6, 14, 30%
+                    box { from: pfx + 6 + pv.0.x * (pfw - 6), pfy + 6 + pv.0.y * (pfh - 6); size: max(pv.0.w * (pfw - 6) - 6, 4), max(pv.0.h * (pfh - 6) - 6, 4); corner: 7 }
+                }
+                box { from: pfx + 6 + pv.0.x * (pfw - 6), pfy + 6 + pv.0.y * (pfh - 6); size: max(pv.0.w * (pfw - 6) - 6, 4), 14; corner: 7; color: if(0 == 0, mint, ink); opacity: if(0 == 0, 45%, 8%) }
+            }
+            group {
+                clip box { from: pfx, pfy; size: pfw, pfh; corner: 10 }
+                body {
+                    color: if(1 == 0, #2b3532, #232a28)
+                    rim: 14%
+                    shadow: 0, 6, 14, 30%
+                    box { from: pfx + 6 + pv.1.x * (pfw - 6), pfy + 6 + pv.1.y * (pfh - 6); size: max(pv.1.w * (pfw - 6) - 6, 4), max(pv.1.h * (pfh - 6) - 6, 4); corner: 7 }
+                }
+                box { from: pfx + 6 + pv.1.x * (pfw - 6), pfy + 6 + pv.1.y * (pfh - 6); size: max(pv.1.w * (pfw - 6) - 6, 4), 14; corner: 7; color: if(1 == 0, mint, ink); opacity: if(1 == 0, 45%, 8%) }
+            }
+            group {
+                clip box { from: pfx, pfy; size: pfw, pfh; corner: 10 }
+                body {
+                    color: if(2 == 0, #2b3532, #232a28)
+                    rim: 14%
+                    shadow: 0, 6, 14, 30%
+                    box { from: pfx + 6 + pv.2.x * (pfw - 6), pfy + 6 + pv.2.y * (pfh - 6); size: max(pv.2.w * (pfw - 6) - 6, 4), max(pv.2.h * (pfh - 6) - 6, 4); corner: 7 }
+                }
+                box { from: pfx + 6 + pv.2.x * (pfw - 6), pfy + 6 + pv.2.y * (pfh - 6); size: max(pv.2.w * (pfw - 6) - 6, 4), 14; corner: 7; color: if(2 == 0, mint, ink); opacity: if(2 == 0, 45%, 8%) }
+            }
+            group {
+                clip box { from: pfx, pfy; size: pfw, pfh; corner: 10 }
+                body {
+                    color: if(3 == 0, #2b3532, #232a28)
+                    rim: 14%
+                    shadow: 0, 6, 14, 30%
+                    box { from: pfx + 6 + pv.3.x * (pfw - 6), pfy + 6 + pv.3.y * (pfh - 6); size: max(pv.3.w * (pfw - 6) - 6, 4), max(pv.3.h * (pfh - 6) - 6, 4); corner: 7 }
+                }
+                box { from: pfx + 6 + pv.3.x * (pfw - 6), pfy + 6 + pv.3.y * (pfh - 6); size: max(pv.3.w * (pfw - 6) - 6, 4), 14; corner: 7; color: if(3 == 0, mint, ink); opacity: if(3 == 0, 45%, 8%) }
+            }
+    }
+
+    // ── Keys: one set for every layout; each one does what fits where it acts ──
+    component Key(x: number, y: number, w: number) {
+        box { from: x, y; size: w, 24; corner: 6; color: #2a302e }
+        box { from: x, y + 21; size: w, 3; corner: 1.5; color: #0c0e0d; opacity: 60% }
+    }
+    group {
+        show: page == 1
+        text "Keys" { at: px, 44; size: 24; weight: 700; color: ink }
+        text "The same keys in every layout: each one does what fits the layout of the monitor it acts on." { at: px, 74; size: 12.5; color: dim }
+        body {
+            color: card
+            rim: 12%
+            shadow: 0, 10, 26, 35%
+            box { from: px - 4, 104; size: W - px - 24, 512; corner: 16 }
+        }
+        column { at: px + 18, 124; gap: 0
+            repeat r in 0..9 {
+                group {
+                    size: W - px - 60, 54
+                    box { from: 0, 53; size: W - px - 60, 1; color: ink; opacity: if(r < 8, 6%, 0) }
+                    Key(0, 14, 150)
+                    text pick(r, "Super + arrows", "Super + Shift + arrows", "Super + −  /  +", "Super + wheel · pinch", "Super + Tab", "Super + W", "Super + V", "Super + 1 … 9", "Carry a window") { at: 75, 26; anchor: center; size: 11.5; weight: 650; color: ink }
+                    text pick(r, "The keyboard to the window that way, on any monitor. Scrolling glides to it; fractal, zoomed in, takes the camera there.", "Moves the window with the keyboard: to lead, to the other monitor, or along the order.", "The leader or the columns narrower and wider. On a fractal monitor: zoom out and in.", "Fractal: zoom, the wheel where the pointer is. Scrolling: the wheel goes along the columns. Elsewhere, pinching in shows everything at a glance.", "Everything at a glance: every monitor's pools, to pick or carry.", "This monitor tiled or free, and back.", "The window with the keyboard floats over the tiles, and back.", "That pool of the monitor under the mouse (with Shift, the window goes there).", "Fractal: on another's edge it docks there; in its middle the two make a group. Elsewhere they change places; free, an edge or a corner takes that half or quarter.") { at: 172, 26; anchor: left center; size: 12; color: dim; width: W - px - 250; lines: 2 }
+                }
+            }
+        }
+        text "Yours go in ~/.config/pleamar/keys.conf: start it with `defaults` to keep these. `pleamar-wm keys` shows them all." { at: px, 640; size: 11.5; color: dim; opacity: 80% }
+    }
+
+    // ── About ──
+    group {
+        show: page == 2
+        text "About" { at: px, 44; size: 24; weight: 700; color: ink }
+        body {
+            color: card
+            rim: 12%
+            shadow: 0, 10, 26, 35%
+            box { from: px - 4, 104; size: W - px - 24, 230; corner: 16 }
+        }
+        column { at: px + 22, 130; gap: 12
+            text "{version}" { size: 15; weight: 650; color: ink }
+            text "A Wayland compositor whose window manager is a pleamar scene: every window rides a spring, and the layouts are lines anyone can rewrite (`pleamar-wm scene ~/.config/pleamar/wm`)." { size: 12.5; color: dim; line_height: 1.4; width: 560 }
+            text "Leader, columns, rows, grid, scrolling, marea, fractal, or free: one per monitor, picked here, from the strip at the top while a window is carried, or in session.conf (`layout DP-3 scrolling`)." { size: 12.5; color: dim; line_height: 1.4; width: 560 }
+            text "github.com/k4ditano/pleamar-wm" { size: 12.5; color: mint }
+        }
+    }
+
+    // ── what was saved, for a moment at the bottom ──
+    group {
+        show: note > 0.01
+        opacity: note
+        body {
+            color: #0f1312
+            rim: 18%
+            shadow: 0, 12, 30, 45%
+            box { at: px + (W - px) / 2 - 12, H - 36 + 8 * (1 - note); size: 420, 36; corner: 18 }
+        }
+        ellipse { at: px + (W - px) / 2 - 200, H - 36 + 8 * (1 - note); radius: 4; color: mint }
+        text "{toast}" { at: px + (W - px) / 2 - 12, H - 36 + 8 * (1 - note); anchor: center; size: 12; weight: 600; color: ink }
+    }
+}

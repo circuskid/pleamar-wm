@@ -875,6 +875,23 @@ fn run(max: usize, to_render: Sender<ToRender>, rx: Channel<ToNest>, ready: std:
     // What the dock has pinned (`dock …` in session.conf).
     let pins = crate::config::get().dock.iter().map(|w| crate::desktop::pin(w)).collect();
     let _ = state.to_render.send(ToRender::Nest(NestEvent::Dock(pins)));
+    // How each monitor starts (`layout …` in session.conf): its layout, or free.
+    // And its name, for whoever sets that from outside (the control centre).
+    for (k, m) in monitors.iter().enumerate().take(4) {
+        let _ = state.to_render.send(ToRender::Text(pleamar::scene::intern(&format!("monname.{k}")), m.name.clone()));
+        let Some(l) = crate::config::get().layout_of(&m.name) else { continue };
+        let free = l == crate::config::LAYOUTS.len() - 1;
+        if !free {
+            let _ = state.to_render.send(ToRender::ExternalFact(pleamar::scene::intern(&format!("lay.{k}")), l.to_string()));
+        }
+        let _ = state.to_render.send(ToRender::ExternalFact(pleamar::scene::intern(&format!("free.{k}")), if free { "1" } else { "0" }.into()));
+        println!("windows · {} starts {}", m.name, crate::config::LAYOUTS[l]);
+    }
+    // The control centre among the user's applications (Marea's finder, any
+    // launcher): written once, and again only if it changed.
+    if !monitors.is_empty() {
+        write_control_entry();
+    }
     let _ = ready.send(Some(()));
     // A session of its own starts what the desktop has (the wallpaper, Marea):
     // `PLEAMAR_WM_AUTOSTART`, or ~/.config/pleamar/autostart, one command a
@@ -4364,3 +4381,19 @@ impl Dispatch<ZwlrOutputPowerV1, usize> for State {
 smithay::delegate_viewporter!(State);
 smithay::delegate_fractional_scale!(State);
 smithay::delegate_single_pixel_buffer!(State);
+
+/// `~/.local/share/applications/pleamar-wm-control.desktop`: the control
+/// centre, for whatever lists applications.
+fn write_control_entry() {
+    let Some(data) = std::env::var("XDG_DATA_HOME").ok().filter(|v| !v.is_empty()).or_else(|| std::env::var("HOME").ok().map(|h| format!("{h}/.local/share"))) else { return };
+    let dir = format!("{data}/applications");
+    let file = format!("{dir}/pleamar-wm-control.desktop");
+    let text = "[Desktop Entry]\nName=Control centre\nGenericName=pleamar-wm settings\nComment=How each monitor lays its windows out, and what each key does\nExec=pleamar-wm control\nIcon=preferences-system\nType=Application\nCategories=Settings;DesktopSettings;\nKeywords=layout;tiling;scrolling;fractal;windows;keys;pleamar;\nOnlyShowIn=pleamar;\n";
+    if std::fs::read_to_string(&file).is_ok_and(|t| t == text) {
+        return;
+    }
+    let _ = std::fs::create_dir_all(&dir);
+    if let Err(e) = std::fs::write(&file, text) {
+        eprintln!("windows · could not write {file}: {e}");
+    }
+}

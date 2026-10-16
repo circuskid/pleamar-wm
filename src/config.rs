@@ -81,6 +81,9 @@ pub struct Pointing {
 #[derive(Clone, Debug, Default)]
 pub struct Config {
     pub monitors: Vec<MonitorRule>,
+    /// How each monitor starts: `layout DP-3 scrolling`, `layout * marea`
+    /// (the last line that names a monitor, or `*`, is its). See `LAYOUTS`.
+    pub layouts: Vec<(String, String)>,
     /// The programs pinned to the dock of free monitors, in order: `dock
     /// kitty zen-browser org.telegram.desktop`.
     pub dock: Vec<String>,
@@ -185,6 +188,21 @@ impl Config {
 
 /// Writes the `dock` line of session.conf: where the first one was (the
 /// others gone), or at the end. Nothing else of the file changes.
+/// The layouts a monitor can start in, by their number in the scene
+/// (`lay.N`); `free` is no layout: windows where they are left.
+pub const LAYOUTS: [&str; 9] = ["leader", "columns", "rows", "grid", "leader-right", "scrolling", "marea", "fractal", "free"];
+
+pub fn layout_index(name: &str) -> Option<usize> {
+    LAYOUTS.iter().position(|l| *l == name).or((name == "leader-left").then_some(0))
+}
+
+impl Config {
+    /// The layout a monitor starts in, if the configuration says one.
+    pub fn layout_of(&self, monitor: &str) -> Option<usize> {
+        self.layouts.iter().rev().find(|(m, _)| m == monitor || m == "*").and_then(|(_, l)| layout_index(l))
+    }
+}
+
 pub fn write_dock(pins: &[String]) {
     let Some(dir) = user_dir() else { return };
     let path = format!("{dir}/session.conf");
@@ -211,6 +229,37 @@ pub fn write_dock(pins: &[String]) {
     if let Err(e) = std::fs::write(&path, out.join("\n") + "\n") {
         eprintln!("config · could not write {path}: {e}");
     }
+}
+
+/// Writes how a monitor starts (`layout MONITOR NAME` in session.conf; `*`
+/// for every monitor): its line replaced where it was, or added at the end.
+pub fn write_layout(monitor: &str, name: &str) -> Result<(), String> {
+    if layout_index(name).is_none() {
+        return Err(format!("'{name}' is not a layout: {}", LAYOUTS.join(", ")));
+    }
+    let path = std::env::var("PLEAMAR_WM_CONFIG").ok().or_else(|| user_dir().map(|d| format!("{d}/session.conf"))).ok_or("there is no configuration folder")?;
+    let text = std::fs::read_to_string(&path).unwrap_or_default();
+    let line = format!("layout {monitor} {name}");
+    let mut out: Vec<String> = Vec::new();
+    let mut put = false;
+    for l in text.lines() {
+        let w = words(l.split('#').next().unwrap_or(""));
+        if w.first().map(String::as_str) == Some("layout") && w.get(1).map(String::as_str) == Some(monitor) {
+            if !put {
+                out.push(line.clone());
+                put = true;
+            }
+            continue;
+        }
+        out.push(l.to_owned());
+    }
+    if !put {
+        out.push(line);
+    }
+    if let Some(dir) = std::path::Path::new(&path).parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    std::fs::write(&path, out.join("\n") + "\n").map_err(|e| format!("could not write {path}: {e}"))
 }
 
 /// The session's configuration, read once.
@@ -385,6 +434,10 @@ pub fn parse(text: &str, c: &mut Config) {
                     eprintln!("config · line {}: a window rule is `window app=NAME|title=TEXT [float] [size WxH] [monitor N|NAME] [workspace N] [private] [frame=own|ours]`", n + 1);
                 }
             }
+            "layout" => match rest {
+                [monitor, name] if layout_index(name).is_some() => c.layouts.push((monitor.clone(), name.clone())),
+                _ => eprintln!("config · line {}: a layout line is `layout MONITOR|* NAME`, NAME one of {}", n + 1, LAYOUTS.join(", ")),
+            },
             "agent" => c.agent = on(rest.first()).unwrap_or_else(|| {
                 eprintln!("config · line {}: `agent on` or `agent off`", n + 1);
                 false
@@ -397,7 +450,7 @@ pub fn parse(text: &str, c: &mut Config) {
                 Some((w, cmd)) if w == "lock" && !cmd.is_empty() => c.phone_lock = Some(cmd.join(" ")),
                 _ => eprintln!("config · line {}: `phone lock COMMAND` (or `phone lock none`)", n + 1),
             },
-            other => eprintln!("config · line {}: '{other}' is not something it knows (monitor, keyboard, pointer, touchpad, idle, agent, phone)", n + 1),
+            other => eprintln!("config · line {}: '{other}' is not something it knows (monitor, layout, keyboard, pointer, touchpad, idle, agent, phone)", n + 1),
         }
     }
 }
@@ -603,6 +656,34 @@ mod tests {
         assert_eq!(c.repeat(), (30, 400));
         assert_eq!(c.touchpad.tap, Some(true));
         assert_eq!(c.off_after, Some(600));
+    }
+
+    #[test]
+    fn a_layout_line_is_written_in_place_of_its_old_one() {
+        let dir = std::env::temp_dir().join(format!("pleamar-wm-layout-{}", std::process::id()));
+        let file = dir.join("session.conf");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(&file, "monitor DP-3 preferred\nlayout DP-3 grid # mine\ndock kitty\n").unwrap();
+        // SAFETY: a test of its own process; nothing else reads it meanwhile.
+        unsafe { std::env::set_var("PLEAMAR_WM_CONFIG", &file) };
+        write_layout("DP-3", "scrolling").unwrap();
+        write_layout("*", "marea").unwrap();
+        assert!(write_layout("DP-3", "sideways").is_err());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "monitor DP-3 preferred\nlayout DP-3 scrolling\ndock kitty\nlayout * marea\n");
+        unsafe { std::env::remove_var("PLEAMAR_WM_CONFIG") };
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn each_monitor_starts_in_the_layout_its_line_says() {
+        let mut c = Config::default();
+        parse("layout * marea\nlayout HDMI-A-1 scrolling\nlayout DP-2 free\nlayout DP-9 sideways", &mut c);
+        assert_eq!(c.layout_of("HDMI-A-1"), Some(5));
+        assert_eq!(c.layout_of("DP-3"), Some(6), "`*` for the rest");
+        assert_eq!(c.layout_of("DP-2"), Some(LAYOUTS.len() - 1));
+        assert_eq!(c.layouts.len(), 3, "a layout it does not know is said, not kept");
+        assert_eq!(layout_index("fractal"), Some(7));
+        assert_eq!(Config::default().layout_of("DP-3"), None);
     }
 
     #[test]

@@ -16,6 +16,14 @@
 # the class their windows say, or their name.
 #dock kitty zen-browser org.telegram.desktop
 
+# How a monitor starts: one of leader, columns, rows, grid, leader-right,
+# scrolling (as niri), marea (the one used most is widest), fractal (split and
+# split again, and zoom), or free (each window where it is left). `*` for every
+# monitor; the last line that names one wins. pleamar-wm's control centre
+# (`pleamar-wm control`) writes these.
+#layout * leader
+#layout HDMI-A-1 scrolling
+
 # What some windows do when they open: by their program (`app=`, its app id or
 # X11 class) and/or their title (`title=`), no case, `*` for anything.
 #   window app=NAME|title=TEXT [float] [size WxH] [monitor N|NAME] [workspace N] [private] [frame=own|ours]

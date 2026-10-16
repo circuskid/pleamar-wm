@@ -38,6 +38,23 @@ the open windows without closing anything.
 
 # What's new
 
+- **Eight layouts, and one control centre to pick them** (0.4): to the leader,
+  columns, rows and grid come **scrolling** (as niri: columns on a strip that
+  glides to the one with the keyboard), **marea** (the one with the keyboard
+  widest, and each one wider the more you use it) and **fractal** (each window
+  a box that is split and split again —a new one halves the one you are on, one
+  let go near another's edge docks there, one let go in another's middle makes
+  a group with it: a small screen of their own in that box— and a camera that
+  zooms into any of them and out to see them all, Super and the wheel right
+  where the pointer is). `pleamar-wm control` (Super+I) picks one per
+  monitor, applies it at once and keeps it for the next session.
+- **The same keys in every layout** (0.4): Super+arrows take the keyboard to the
+  window that way, wherever the windows are drawn and across monitors; Super+−/+
+  and Super+wheel zoom a fractal monitor; a pinch zooms out to everything at a
+  glance.
+- **Water magnets** (0.4): a free window carried against an edge takes half of
+  its monitor, against a corner a quarter, against the top all of it, with a pool
+  of water showing where it will land.
 - **Your session in your pocket** (0.3): this desktop on a phone or a tablet, in
   any browser, with its own video straight from the card.
 - **Your agent gets hands of its own** (0.3): a pointer and a keyboard apart
@@ -69,9 +86,11 @@ Every release, with what changed: [Releases].
   elsewhere does not get that over their picture.
 - **The window manager is a scene**: layouts, decorations, animations and drag
   behaviour are a `.plm` file — copy it (`pleamar-wm scene ~/.config/pleamar/wm`, with its shaders) and make it yours.
-- **Tiled or free, per monitor, in one key**: five tiled layouts (leader left or
-  right, columns, rows, grid), or free windows as on KDE/Windows — edges,
-  corner, maximize, the one clicked on top. `Super+W` switches with an animation.
+- **Tiled or free, per monitor, in one key**: eight layouts —leader left or
+  right, columns, rows, grid, scrolling, marea and fractal—, or free windows as
+  on KDE/Windows — edges, corner, maximize, the one clicked on top, and water
+  magnets for halves and quarters. `Super+W` switches with an animation; the
+  control centre (`pleamar-wm control`, Super+I) picks each monitor's.
   Only free windows have a title bar: tiled, the program has all of its tile.
 - **The shore, the dock of a free monitor**: it rises out of the water at the
   bottom edge when a monitor goes free, joined to it by a neck —Marea hangs
@@ -245,7 +264,9 @@ declares: `close`, `minimize`, `toggle_free`, `toggle_float` (Super+V: only the
 window with the keyboard floats over the tiles), `maximize` (tiled, it takes all
 of its monitor —bars and gaps kept— over the others, and goes back to its tile;
 no key of its own: `bind Super+m maximize` as Hyprland's `fullscreen 1`),
-`focus_next`…— or to programs.
+`focus_left`/`right`/`up`/`down`, `zoom_in`/`zoom_out`…— or to programs. Each
+does what fits the layout of the monitor it acts on, so one set of keys serves
+them all.
 Start it with `defaults` to keep pleamar-wm's and change what you want;
 `pleamar-wm keys` shows them all:
 
@@ -267,6 +288,8 @@ out the same. `pleamar-wm config` shows what it understood.
 
 ```text
 monitor DP-3 1920x1080@165 at 0,0          # mode, refresh, where
+layout * leader                             # how monitors start: leader, columns, rows, grid,
+layout HDMI-A-1 scrolling                   #   leader-right, scrolling, marea, fractal, free
 monitor HDMI-A-1 preferred at 1920,0 scale 1.5
 keyboard layout es repeat 25 delay 400
 pointer accel flat
@@ -312,15 +335,18 @@ The ones that come with it (`pleamar-wm keys` prints them all), as on Hyprland:
 | `Super+Tab` | everything at a glance |
 | `Super+1…9` · `Super+Shift+1…9` | show that workspace · send the window there |
 | `Super+Ctrl+Left/Right` | the workspace beside |
-| `Super+arrows` | the keyboard to the next / previous window |
+| `Super+arrows` | the keyboard to the window that way (any layout, any monitor) |
 | `Super+Shift+arrows` | lead, move to the other monitor, change places |
-| `Super+-` · `Super++` | the leader narrower / wider |
+| `Super+-` · `Super++` | the leader (scrolling: the columns) narrower / wider; fractal: zoom out / in |
+| `Super+wheel` | fractal: zoom in and out where the pointer is; scrolling: along the columns |
+| `Super+I` | the control centre: each monitor's layout, what each key does |
 | `Super+Space` · `Super+L` | Marea's search · lock |
 | `Super+Shift+A` | talk with Marea (her chat, which can use the desktop for you) |
 | `Super+Shift+Escape` | whoever uses this desktop from elsewhere: out, now |
 | `Print` · `Shift+Print` · `Ctrl+Print` | a piece, the screen, the window |
 | three fingers down / up | close / fullscreen |
 | four fingers sideways | the keyboard to the next / previous |
+| pinch, three fingers | fractal: zoom; elsewhere, out is everything at a glance |
 
 The keyboard goes to the window under the mouse, without a click (in free mode,
 with a click, as on Windows). Ctrl+Alt+Backspace leaves; Ctrl+Alt+F1…F12 go

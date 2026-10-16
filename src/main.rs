@@ -64,9 +64,42 @@ fn main() {
         print!("{}", keys::DEFAULTS);
         return;
     }
-    // `pleamar-wm config`: the session's configuration as it is understood.
+    // `pleamar-wm config`: the session's configuration as it is understood;
+    // `config layouts`, how each monitor starts, a line each; `config set
+    // layout MONITOR NAME`, that written down (the control centre uses both).
     if args.first().map(String::as_str) == Some("config") {
-        println!("{:#?}", config::get());
+        match args.get(1).map(String::as_str) {
+            Some("layouts") => {
+                for (m, l) in &config::get().layouts {
+                    println!("{m} {l}");
+                }
+            }
+            Some("set") if args.get(2).map(String::as_str) == Some("layout") && args.len() == 5 => {
+                if let Err(e) = config::write_layout(&args[3], &args[4]) {
+                    eprintln!("config · {e}");
+                    std::process::exit(1);
+                }
+            }
+            Some(other) => {
+                eprintln!("config · '{other}': `pleamar-wm config`, `config layouts`, or `config set layout MONITOR|* NAME` ({})", config::LAYOUTS.join(", "));
+                std::process::exit(1);
+            }
+            None => println!("{:#?}", config::get()),
+        }
+        return;
+    }
+    // `pleamar-wm control`: the control centre, a window to choose how each
+    // monitor lays its windows out and to see what each key does.
+    if args.first().map(String::as_str) == Some("control") {
+        let dir = std::env::var("XDG_CACHE_HOME").ok().filter(|v| !v.is_empty()).or_else(|| std::env::var("HOME").ok().map(|h| format!("{h}/.cache"))).unwrap_or_else(|| "/tmp".into()) + "/pleamar-wm/control";
+        let _ = std::fs::create_dir_all(&dir);
+        for (name, text) in [("control.plm", include_str!("../control/control.plm")), ("control.luau", include_str!("../control/control.luau"))] {
+            if let Err(e) = std::fs::write(format!("{dir}/{name}"), text) {
+                eprintln!("control · could not write {dir}/{name}: {e}");
+                std::process::exit(1);
+            }
+        }
+        pleamar::run_with(vec!["--scene".to_owned(), format!("{dir}/control.plm"), "--no-hud".to_owned()]);
         return;
     }
     // `pleamar-wm report`: measures the session and whatever runs in it (Marea…)
