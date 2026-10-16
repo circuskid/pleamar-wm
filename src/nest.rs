@@ -146,9 +146,11 @@ struct Content {
     changed: bool,
 }
 
-/// A program's window: a Wayland one (xdg-shell), or an X11 one (XWayland).
-/// Both are a surface of the compositor; they differ in how they are asked
-/// for a size, told they have the keyboard, or closed.
+/// The longest the windows wait for the scene to paint a frame of theirs
+/// before their monitor's beat tells them again: three frames at 165 Hz,
+/// more than a painting takes.
+const PAINT_PATIENCE: Duration = Duration::from_millis(20);
+
 /// What a program's frame callback waits for before it is told to draw again.
 #[derive(Clone, Copy, PartialEq)]
 enum Waits {
@@ -160,6 +162,9 @@ enum Waits {
     Window(usize),
 }
 
+/// A program's window: a Wayland one (xdg-shell), or an X11 one (XWayland).
+/// Both are a surface of the compositor; they differ in how they are asked
+/// for a size, told they have the keyboard, or closed.
 #[derive(Clone, PartialEq)]
 enum Toplevel {
     Xdg(ToplevelSurface),
@@ -552,9 +557,9 @@ struct State {
     /// (`PLEAMAR_TIMING`) Since the last census: the windows' commits, the
     /// ones with something new to show, and the frames told to the scene.
     tally: [u32; 3],
-    /// A window's frame has been told to the scene and not painted yet: its
-    /// frame callbacks wait for that.
-    awaiting_paint: bool,
+    /// A window's frame has been told to the scene and not painted yet (since
+    /// when): its frame callbacks wait for that, a while (`paint_awaited`).
+    awaiting_paint: Option<Instant>,
     /// The last time the frame callbacks waiting for the scene were answered.
     answered_at: Instant,
     /// Each monitor's beat: when a frame of it last reached the screen, and how many of its
@@ -832,7 +837,7 @@ fn run(max: usize, to_render: Sender<ToRender>, rx: Channel<ToNest>, ready: std:
         dirty: Vec::new(),
         callbacks: Vec::new(),
         tally: [0; 3],
-        awaiting_paint: false,
+        awaiting_paint: None,
         answered_at: Instant::now(),
         beats: Vec::new(),
         to_render,
@@ -2318,7 +2323,7 @@ impl State {
         let t = self.time();
         self.answered_at = Instant::now();
         if monitor.is_none() {
-            self.awaiting_paint = false;
+            self.awaiting_paint = None;
         }
         self.callbacks.retain(|(cb, waits)| {
             let now = match *waits {
@@ -2378,8 +2383,8 @@ impl State {
     /// since they were last answered. `None`: there are none, or they wait
     /// for the scene to paint what it was told.
     fn callbacks_due_in(&self) -> Option<Duration> {
-        if self.awaiting_paint {
-            return None;
+        if let Some(left) = self.paint_awaited() {
+            return Some(left);
         }
         self.callbacks
             .iter()
@@ -2391,9 +2396,19 @@ impl State {
             .min()
     }
 
+    /// How much longer the windows wait for the scene to paint what it was
+    /// told (`None`: they don't). Not beyond `PAINT_PATIENCE`: a frame told
+    /// that the scene had nothing to paint for (it changed nothing seen) left
+    /// them waiting until something else painted, and with the scene still a
+    /// browser's video on the other monitor got told to draw only every
+    /// quarter of a second.
+    fn paint_awaited(&self) -> Option<Duration> {
+        self.awaiting_paint.and_then(|at| PAINT_PATIENCE.checked_sub(at.elapsed())).filter(|d| !d.is_zero())
+    }
+
     /// Those whose wait is over (see `callbacks_due_in`), told.
     fn answer_due(&mut self) {
-        if self.awaiting_paint {
+        if self.paint_awaited().is_some() {
             return;
         }
         let t = self.time();
@@ -2436,7 +2451,7 @@ impl State {
     fn frame_done_all(&mut self) {
         let t = self.time();
         self.answered_at = Instant::now();
-        self.awaiting_paint = false;
+        self.awaiting_paint = None;
         for (cb, _) in self.callbacks.drain(..) {
             cb.done(t);
         }
@@ -2759,7 +2774,7 @@ impl State {
                 continue;
             }
             self.tally[2] += 1;
-            self.awaiting_paint = true;
+            self.awaiting_paint = self.awaiting_paint.or(Some(Instant::now()));
             self.tell(NestEvent::Frame { slot, geometry: g, pieces });
         }
     }
