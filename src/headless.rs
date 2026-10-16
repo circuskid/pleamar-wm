@@ -7,6 +7,8 @@
 //! checked without a TTY. `PLEAMAR_HEADLESS_INPUT` is a mouse and a keyboard
 //! that go where the session's real ones would (`route.rs`): to the scene, or
 //! to a program's surface —Marea's finder, her catcher—.
+//! What starts with it is only what `PLEAMAR_WM_AUTOSTART` names: never the
+//! user's own autostart, which belongs to their real session.
 
 use crate::screen::{self, LayerFrames, LayerWindow, Output, Screen};
 use pleamar::scene::{Cursor, Screens, Surface, ToRender};

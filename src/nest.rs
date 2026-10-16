@@ -897,7 +897,11 @@ fn run(max: usize, to_render: Sender<ToRender>, rx: Channel<ToNest>, ready: std:
     // `PLEAMAR_WM_AUTOSTART`, or ~/.config/pleamar/autostart, one command a
     // line. The same file `pleamar --autostart` runs on another compositor;
     // what only makes sense here says so with `wm:` in front.
-    if !monitors.is_empty() {
+    // A screenless test session starts only what `PLEAMAR_WM_AUTOSTART` says:
+    // the user's own started their Marea and their remote beside the real
+    // session's, which rotated its log and took its port.
+    let headless = crate::portal::HEADLESS.load(std::sync::atomic::Ordering::Relaxed);
+    if !monitors.is_empty() && !(headless && std::env::var_os("PLEAMAR_WM_AUTOSTART").is_none()) {
         let file = std::env::var("PLEAMAR_WM_AUTOSTART").ok().or_else(|| crate::config::user_file("autostart", "autostart"));
         // With none of the user's, the one that comes with it (inside it).
         let text = match file.as_deref() {
