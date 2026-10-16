@@ -242,7 +242,41 @@
 
   // What happens here, told home for its log (pleamar-wm's): kept until the
   // socket is open, the last ones only.
+  // ── the black box ──
+  // A browser short of memory kills a page without a word and loads it
+  // again (Safari twice, and then gives up: «A problem repeatedly occurred»).
+  // So every second what it is doing is kept in this tab's storage; a page
+  // that leaves properly says so, and the next one here tells home how the
+  // last one ended, with its last lines.
+  const bb = { since: Date.now(), decoders: 0, lines: [] };
+  function bbSave() {
+    try {
+      sessionStorage.setItem('pleamar-bb', JSON.stringify({
+        at: Date.now(), since: bb.since, page: VERSION, decoders: bb.decoders, lines: bb.lines,
+        picture: canvas.width + '×' + canvas.height, way: dcVideo ? 'the channel' : isDirect ? 'the video track' : 'the socket',
+        waiting: decoder ? decoder.decodeQueueSize : 0, kbps, here: phoneHere, hidden: document.hidden,
+      }));
+    } catch (_) {}
+  }
+  function bbLastOne() {
+    let last = null, left = false;
+    try {
+      last = JSON.parse(sessionStorage.getItem('pleamar-bb') || 'null');
+      left = sessionStorage.getItem('pleamar-bb-left') === '1';
+      sessionStorage.removeItem('pleamar-bb-left');
+    } catch (_) {}
+    if (!last || left) return;
+    const s = (ms) => Math.round(ms / 1000) + ' s';
+    plog('black box: the last page here ended without leaving, ' + s(Date.now() - last.at) + ' ago, after ' + s(last.at - last.since)
+      + ' (page ' + last.page + ') · picture ' + last.picture + ' by ' + last.way + ', ' + last.decoders + ' decoders made, ' + last.waiting
+      + ' frames waiting, ' + last.kbps + ' kb/s' + (last.here ? ' · the session was here' : '') + (last.hidden ? ' · it was hidden' : ''));
+    for (const l of last.lines || []) plog('black box: ' + l);
+  }
+  setInterval(bbSave, 1000);
+  addEventListener('pagehide', () => { try { sessionStorage.setItem('pleamar-bb-left', '1'); } catch (_) {} });
   function plog(t) {
+    bb.lines.push(new Date().toTimeString().slice(0, 8) + ' ' + t);
+    if (bb.lines.length > 12) bb.lines.shift();
     const line = 'log ' + t;
     if (ws && ws.readyState === 1) ws.send(line);
     else { (plog.q = plog.q || []).push(line); if (plog.q.length > 40) plog.q.shift(); }
@@ -525,6 +559,7 @@
   // fails on it (it did arrive: the way is not what failed).
   let lastSeq = 0;
   function newDecoder() {
+    bb.decoders++;
     if (decoder) { try { decoder.close(); } catch (_) {} }
     configured = false; needKey = true;
     const mine = decoder = new VideoDecoder({
@@ -1352,6 +1387,7 @@
   // Loaded again by an update while the session was here: it comes back by itself.
   let resume = false;
   try { resume = sessionStorage.getItem('pleamar-resume') === '1'; sessionStorage.removeItem('pleamar-resume'); } catch (_) {}
+  bbLastOne();
   if (PHONE && resume) bringHere(); else connect();
 })();
 </script>
