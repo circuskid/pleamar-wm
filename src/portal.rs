@@ -28,6 +28,11 @@ use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value as ZValue};
 
 /// The name the portal asks for (`pleamar.portal` says it).
 const NAME: &str = "org.freedesktop.impl.portal.desktop.pleamar";
+
+/// A screenless test session: it takes the portal's name only when nobody
+/// has it (its own bus), never from the real session on the same bus —which
+/// lost it for good, and with it sharing the screen until the next login.
+pub static HEADLESS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 const PATH: &str = "/org/freedesktop/portal/desktop";
 
 /// Its pictures' numbers: far from the ones the Wayland side gives, so
@@ -443,8 +448,15 @@ pub fn start(to_render: Sender<ToRender>) {
             .and_then(|b| b.serve_at(PATH, ScreenCast { sessions: sessions.clone() }))
             .and_then(|b| b.serve_at(PATH, GlobalShortcuts { sessions }))
             .and_then(|b| b.serve_at(PATH, Screenshot))
-            .and_then(|b| b.name(NAME))
-            .and_then(|b| b.build());
+            .and_then(|b| b.build())
+            .and_then(|c| {
+                use zbus::fdo::RequestNameFlags;
+                let flags = if HEADLESS.load(Ordering::Relaxed) { RequestNameFlags::DoNotQueue.into() } else { RequestNameFlags::ReplaceExisting | RequestNameFlags::DoNotQueue };
+                match c.request_name_with_flags(NAME, flags)? {
+                    zbus::fdo::RequestNameReply::PrimaryOwner | zbus::fdo::RequestNameReply::AlreadyOwner => Ok(c),
+                    _ => Err(zbus::Error::NameTaken),
+                }
+            });
         match built {
             Ok(connection) => {
                 println!("portal · {NAME}: sharing the screen is this session's");

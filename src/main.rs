@@ -102,6 +102,8 @@ fn main() {
         // that was gone seconds later.
         // SAFETY: before any thread is started.
         unsafe { std::env::remove_var("PLEAMAR_WM_EXPORT") };
+        // Nor does it take the real session's portal on the same bus.
+        portal::HEADLESS.store(true, std::sync::atomic::Ordering::Relaxed);
         let _ = std::fs::create_dir_all(&own);
         println!("headless · its scene listens in {own}");
         pleamar::provide_before_quit(Box::new(move || {
