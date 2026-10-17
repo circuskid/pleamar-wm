@@ -45,6 +45,33 @@ fn main() {
     if args.first().map(String::as_str) == Some("remote") {
         std::process::exit(remote::run(&args[1..]));
     }
+    // `pleamar-wm idle hold|release|status`: keep the monitors from going dark
+    // (`idle off-after`) while the session runs, and let them go dark again.
+    if args.first().map(String::as_str) == Some("idle") {
+        let path = config::idle_hold_path();
+        match args.get(1).map(String::as_str) {
+            Some("hold") => {
+                if let Err(e) = std::fs::write(&path, b"") {
+                    eprintln!("idle · {}: {e}", path.display());
+                    std::process::exit(1);
+                }
+            }
+            Some("release") => {
+                if let Err(e) = std::fs::remove_file(&path) {
+                    if e.kind() != std::io::ErrorKind::NotFound {
+                        eprintln!("idle · {}: {e}", path.display());
+                        std::process::exit(1);
+                    }
+                }
+            }
+            Some("status") => println!("{}", if path.exists() { "hold" } else { "release" }),
+            _ => {
+                eprintln!("idle · `pleamar-wm idle hold|release|status`");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     // `pleamar-wm init`: ~/.config/pleamar with a starting point, never over
     // what is already there.
     if args.first().map(String::as_str) == Some("init") {
