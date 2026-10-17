@@ -408,6 +408,11 @@ struct Panel {
     shell: Shell,
     id: u64,
     monitor: usize,
+    /// What its program calls it (layer-shell's namespace), for `agent layers`.
+    namespace: String,
+    /// Kept off the screen for now (`agent hide`): not drawn, no room kept.
+    /// Its program runs as ever. Marea hides the bar yours replaces.
+    hidden: bool,
     /// The size it was last told.
     configured: Option<(i32, i32)>,
     sent: Vec<u64>,
@@ -2191,7 +2196,52 @@ impl State {
 
     /// What a program's surface shows, to its monitor: where, at what level,
     /// and its pieces (it, its subsurfaces and its menus).
+    /// The programs' own surfaces on the desktop —bars, docks, widgets, a
+    /// shell's panels (layer-shell)—: who draws each, what it calls it, where
+    /// it is and whether it is hidden. For what replaces one (Marea's Build
+    /// something hides the bar yours takes the place of).
+    pub(super) fn agent_layers(&self) -> String {
+        let hex = |s: &str| if s.is_empty() { "-".to_owned() } else { s.bytes().map(|b| format!("{b:02x}")).collect::<String>() };
+        let mut out = String::from("layers");
+        for p in &self.panels {
+            let Shell::Layer(layer) = &p.shell else { continue };
+            let root = layer.wl_surface();
+            let c = with_states(root, |s| *s.cached_state.get::<LayerSurfaceCachedState>().current());
+            let size = content_of(root, |c| c.size).unwrap_or((0, 0));
+            let (mw, mh) = self.monitor_size(p.monitor);
+            let (x, y) = panel_place(&c, (mw, mh), (size.0 as i32, size.1 as i32));
+            let pid = root.client().and_then(|cl| cl.get_credentials(&self.dh).ok()).map_or(0, |cr| cr.pid as u32);
+            // Who it is: its program, and for a pleamar program its scene.
+            let comm = std::fs::read_to_string(format!("/proc/{pid}/comm")).unwrap_or_default().trim().to_owned();
+            let cmdline = std::fs::read(format!("/proc/{pid}/cmdline")).unwrap_or_default();
+            let words: Vec<String> = cmdline.split(|b| *b == 0).map(|w| String::from_utf8_lossy(w).into_owned()).collect();
+            let scene = words.iter().position(|w| w == "--scene").and_then(|k| words.get(k + 1)).cloned().unwrap_or_default();
+            let level = match c.layer {
+                ShellLayer::Background => 0,
+                ShellLayer::Bottom => 1,
+                ShellLayer::Top => 2,
+                ShellLayer::Overlay => 3,
+            };
+            let sep = if out.len() > "layers".len() { " |" } else { "" };
+            out.push_str(&format!("{sep} {} {pid} {} {x} {y} {} {} {level} {} {} {} {}", p.id, p.monitor, size.0, size.1, u8::from(p.hidden), hex(&p.namespace), hex(&comm), hex(&scene)));
+        }
+        out
+    }
+
+    /// One of them off the screen, or back: its program goes on as ever.
+    pub(super) fn agent_hide_layer(&mut self, id: u64, hide: bool) -> Result<(), &'static str> {
+        let k = self.panels.iter().position(|p| p.id == id && matches!(p.shell, Shell::Layer(_))).ok_or("target-not-found")?;
+        self.panels[k].hidden = hide;
+        self.show_panel(k);
+        self.tell_reserved();
+        Ok(())
+    }
+
     fn show_panel(&mut self, k: usize) {
+        if self.panels[k].hidden {
+            layers::hide(self.panels[k].id);
+            return;
+        }
         let root = self.panels[k].shell.wl_surface().clone();
         let (mw, mh) = self.monitor_size(self.panels[k].monitor);
         let c = with_states(&root, |s| *s.cached_state.get::<LayerSurfaceCachedState>().current());
@@ -2264,7 +2314,7 @@ impl State {
     /// windows out around it. Told when it changes.
     fn tell_reserved(&mut self) {
         let mut now = vec![[0f32; 4]; self.outputs.len()];
-        for p in &self.panels {
+        for p in self.panels.iter().filter(|p| !p.hidden) {
             let Shell::Layer(layer) = &p.shell else { continue };
             if content_of(layer.wl_surface(), |c| c.size == (0, 0)).unwrap_or(true) {
                 continue;
@@ -3963,7 +4013,7 @@ impl SessionLockHandler for State {
         surface.send_configure();
         self.next_number += 1;
         self.outputs[monitor].enter(surface.wl_surface());
-        self.panels.push(Panel { shell: Shell::Lock(surface), id: self.next_number, monitor, configured: Some((w, h)), sent: Vec::new() });
+        self.panels.push(Panel { shell: Shell::Lock(surface), id: self.next_number, monitor, namespace: "lock".to_owned(), hidden: false, configured: Some((w, h)), sent: Vec::new() });
     }
 }
 
@@ -4159,7 +4209,7 @@ impl WlrLayerShellHandler for State {
         self.next_number += 1;
         self.outputs[monitor].enter(surface.wl_surface());
         println!("windows · '{namespace}' on {}", self.outputs[monitor].name());
-        self.panels.push(Panel { shell: Shell::Layer(surface), id: self.next_number, monitor, configured: None, sent: Vec::new() });
+        self.panels.push(Panel { shell: Shell::Layer(surface), id: self.next_number, monitor, namespace, hidden: false, configured: None, sent: Vec::new() });
     }
 
     fn layer_destroyed(&mut self, surface: LayerSurface) {

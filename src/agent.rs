@@ -309,6 +309,8 @@ impl State {
             ["r", pid] => self.agent_rect(pid),
             ["l"] => Ok(self.agent_list()),
             ["o"] => Ok(self.agent_monitors()),
+            ["y"] => Ok(self.agent_layers()),
+            ["h", id, on] => self.agent_hide_layer(id.parse().unwrap_or(0), *on == "1").map(|_| "ok".to_owned()),
             // Who the agent is, for its cursor's label (`PLEAMAR_AGENT_NAME`).
             ["n", hex] => {
                 let name: String = String::from_utf8_lossy(&unhex(hex).unwrap_or_default()).chars().filter(|c| !c.is_control()).take(16).collect();

@@ -16,6 +16,9 @@ const HELP: &str = "pleamar-wm agent — use the desktop with the agent's own po
                                   program's several windows), box, monitor, keyboard, program,
                                   title, and «dialog of PID» for a dialog (a «Save as» is its own)
   monitors                        the monitors, numbered as `windows` and `send` count them
+  layers                          the programs' own surfaces —bars, docks, widgets, a shell's
+                                  panels—: number, program (and scene), name, box, monitor, level
+  hide N · show N                 one of those off the screen for now, or back (its program runs on)
   look [PID] [FILE]               a picture of that window (or of the whole desktop); prints the file
                                   (a program with a dialog open: the dialog, which is where it listens)
   move PID X Y                    the agent's cursor to X, Y of the window's picture
@@ -348,6 +351,30 @@ fn go(args: &[String]) -> Result<(), String> {
                     None => String::new(),
                 };
                 println!("{name:>8}  {}  «{}»  {}x{} at {},{}  {seen}{keys}{dialog}{scene}", unhex(f[7]), unhex(f[8]), f[3], f[4], f[1], f[2]);
+            }
+        }
+        "layers" => {
+            let reply = Hands::open()?.say("y")?;
+            let list = reply.strip_prefix("layers").ok_or(reply.clone())?;
+            for entry in list.split('|').map(str::trim).filter(|e| !e.is_empty()) {
+                let f: Vec<&str> = entry.split_whitespace().collect();
+                if f.len() < 12 {
+                    continue;
+                }
+                // id pid monitor x y w h level hidden namespace program scene
+                let scene = unhex(f[11]);
+                let program = unhex(f[10]);
+                let who = if scene.is_empty() || scene == "-" { program } else { format!("{program} {scene}") };
+                let level = ["background", "bottom", "top", "overlay"].get(f[7].parse::<usize>().unwrap_or(2)).copied().unwrap_or("top");
+                let hidden = if f[8] == "1" { " · hidden" } else { "" };
+                println!("{:>5}  {who}  «{}»  {}x{} at {},{}  monitor {}  {level}  pid {}{hidden}", f[0], unhex(f[9]), f[5], f[6], f[3], f[4], f[2], f[1]);
+            }
+        }
+        "hide" | "show" => {
+            let id = args.get(1).ok_or("which one: its number, as `pleamar-wm agent layers` says it")?;
+            let reply = Hands::open()?.say(&format!("h {id} {}", u8::from(what == "hide")))?;
+            if reply != "ok" {
+                return Err(reply);
             }
         }
         "monitors" => {
