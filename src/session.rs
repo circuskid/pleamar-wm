@@ -1238,10 +1238,10 @@ impl State {
     }
 
     /// Once a second: dark after `idle off-after` seconds without input,
-    /// unless a program keeps the screen awake.
+    /// unless a program keeps the screen awake or `pleamar-wm idle hold` was said.
     fn idle_check(&mut self) {
         let Some(secs) = config::get().off_after else { return };
-        if !self.dark_for_idle && !layers::inhibited() && self.last_input.elapsed() > Duration::from_secs(secs) && self.monitors.iter().any(|m| m.on) {
+        if !self.dark_for_idle && !layers::inhibited() && !config::idle_hold_path().exists() && self.last_input.elapsed() > Duration::from_secs(secs) && self.monitors.iter().any(|m| m.on) {
             println!("session · {secs} s without input: the monitors go dark");
             self.dark_for_idle = true;
             self.power(None, false);

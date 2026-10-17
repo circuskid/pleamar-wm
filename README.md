@@ -470,7 +470,8 @@ moving it wakes her. Monitors can be plugged in and out while it runs.
 - **Monitors on their side**: `transform 90` (or `180`, `270`) on a monitor
   line, or Hyprland's `transform`; everything is laid out upright and turned
   at the end, the cursor with it.
-- **Idleness**: `idle off-after`, or hypridle / swayidle / wlopm through
+- **Idleness**: `idle off-after` (paused and resumed while it runs with
+  `pleamar-wm idle hold|release|status`, for a "caffeine" switch), or hypridle / swayidle / wlopm through
   ext-idle-notify and wlr-output-power-management; a video keeps the screen
   awake (idle-inhibit). `vrr` on a monitor line: variable refresh.
 - **Touchpad**: three and four finger swipes and pinches are the scene's
