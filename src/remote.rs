@@ -406,9 +406,33 @@ fn who(req: &Request, stream: &TcpStream) -> String {
         .unwrap_or_else(|| stream.peer_addr().map(|a| a.ip().to_string()).unwrap_or_default())
 }
 
-fn page(signed_in: bool, error: &str) -> String {
+/// Whose relay an address is, if it is one of those that hide a browser's
+/// own (Safari's «Hide IP Address», iCloud Private Relay, Cloudflare WARP):
+/// a page behind one cannot be reached by the direct way, and goes the slow
+/// one. Seen from an iPhone on the same Wi-Fi where a computer went direct.
+fn relay_of(address: &str) -> Option<&'static str> {
+    let ip: std::net::IpAddr = address.trim().parse().ok()?;
+    let within = |net: &str, bits: u32| -> bool {
+        match (ip, net.parse::<std::net::IpAddr>()) {
+            (std::net::IpAddr::V4(a), Ok(std::net::IpAddr::V4(n))) => bits == 0 || (u32::from(a) ^ u32::from(n)) >> (32 - bits) == 0,
+            (std::net::IpAddr::V6(a), Ok(std::net::IpAddr::V6(n))) => bits == 0 || (u128::from(a) ^ u128::from(n)) >> (128 - bits) == 0,
+            _ => false,
+        }
+    };
+    [
+        ("2a09:bac0::", 29, "Cloudflare"),
+        ("104.28.0.0", 16, "Cloudflare"),
+        ("2a02:26f7::", 32, "Akamai"),
+        ("172.224.0.0", 12, "Akamai"),
+    ]
+    .iter()
+    .find(|(net, bits, _)| within(net, *bits))
+    .map(|(_, _, who)| *who)
+}
+
+fn page(signed_in: bool, error: &str, relay: &str) -> String {
     let (login, app) = if signed_in { ("none", "block") } else { ("flex", "none") };
-    PAGE.replace("{{LOGIN}}", login).replace("{{APP}}", app).replace("{{ERROR}}", error).replace("{{VERSION}}", &format!("{PAGE_VERSION:016x}"))
+    PAGE.replace("{{LOGIN}}", login).replace("{{APP}}", app).replace("{{ERROR}}", error).replace("{{RELAY}}", relay).replace("{{VERSION}}", &format!("{PAGE_VERSION:016x}"))
 }
 
 const fn fnv(bytes: &[u8]) -> u64 {
@@ -487,7 +511,8 @@ fn connection(mut stream: TcpStream, gate: &Arc<Mutex<Gate>>, hands: &Arc<Mutex<
         ("GET", "/") => {
             // Back at the door after a while unused: why.
             let why = if !signed_in && req.path.ends_with("?unused") { "Signed out after half an hour without use." } else { "" };
-            respond(&mut stream, "200 OK", html, "", page(signed_in, why).as_bytes())
+            let relay = relay_of(&who(&req, &stream)).unwrap_or("");
+            respond(&mut stream, "200 OK", html, "", page(signed_in, why, relay).as_bytes())
         }
         ("POST", "/login") => {
             let who = who(&req, &stream);
@@ -495,18 +520,21 @@ fn connection(mut stream: TcpStream, gate: &Arc<Mutex<Gate>>, hands: &Arc<Mutex<
             let (password, code) = (form.get("password").cloned().unwrap_or_default(), form.get("code").cloned().unwrap_or_default());
             if gate.lock().unwrap().blocked(&who) {
                 std::thread::sleep(Duration::from_secs(2));
-                return respond(&mut stream, "429 Too Many Requests", html, "", page(false, "Too many tries. Wait a quarter of an hour.").as_bytes());
+                return respond(&mut stream, "429 Too Many Requests", html, "", page(false, "Too many tries. Wait a quarter of an hour.", "").as_bytes());
             }
             let signed = gate.lock().unwrap().sign_in(&who, &password, &code);
             match signed {
                 Some(token) => {
                     notify(&format!("Someone signed in to this desktop from {who}"));
+                    if let Some(relay) = relay_of(&who) {
+                        println!("remote · {who} is {relay}'s relay (a browser hiding its address): the direct way will not reach that page");
+                    }
                     let set = format!("Set-Cookie: pleamar_remote={token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age={}\r\nLocation: /\r\n", LIFE.as_secs());
                     respond(&mut stream, "303 See Other", html, &set, b"")
                 }
                 None => {
                     std::thread::sleep(Duration::from_secs(1));
-                    respond(&mut stream, "401 Unauthorized", html, "", page(false, "That password or code is not right.").as_bytes())
+                    respond(&mut stream, "401 Unauthorized", html, "", page(false, "That password or code is not right.", "").as_bytes())
                 }
             }
         }
@@ -1087,7 +1115,9 @@ enum Pace {
 }
 
 const KBPS_START: u32 = 8000;
-const KBPS_MIN: u32 = 1500;
+// Down to what a slow way carries (a phone through somebody's relay brought
+// 0.4–1.9 Mb/s): with a floor of 1500 it could only wait and start again.
+const KBPS_MIN: u32 = 500;
 const KBPS_MAX: u32 = 20000;
 
 impl Flow {
@@ -1153,8 +1183,10 @@ impl Flow {
                 let fits = if full { (self.arriving * 0.85) as u32 } else { self.kbps };
                 self.kbps = fits.min(self.kbps * 85 / 100).max(KBPS_MIN);
                 // Little room: fewer frames, each sharper.
-                if self.kbps < 4000 {
-                    self.fps = 30;
+                if self.kbps < 1500 {
+                    self.fps = 15;
+                } else if self.kbps < 4000 {
+                    self.fps = self.fps.min(30);
                 }
                 return Pace::Again;
             }
@@ -1182,6 +1214,8 @@ impl Flow {
             self.last_raise = now;
             if self.fps < 60 && self.kbps >= 4000 {
                 self.fps = 60;
+            } else if self.fps < 30 && self.kbps >= 1500 {
+                self.fps = 30;
             } else {
                 self.kbps = (self.kbps * 5 / 4).min(KBPS_MAX);
             }
@@ -2688,5 +2722,20 @@ mod tests {
         assert_eq!(&t[0][..9], &[1, 0, 64, 0, 0, 0, 64, 0, 64]);
         // All of it: two rows of three squares, joined along each row.
         assert_eq!(changed(w, h, &a, None).len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod relay_tests {
+    use super::relay_of;
+
+    #[test]
+    fn the_relays_seen_are_told_apart_from_a_home() {
+        assert_eq!(relay_of("2a09:bac3:3137:3632::566:5f"), Some("Cloudflare"));
+        assert_eq!(relay_of("2a02:26f7:ef0c:5905:0:9000:0:c"), Some("Akamai"));
+        assert_eq!(relay_of("172.226.1.2"), Some("Akamai"));
+        assert_eq!(relay_of("213.194.159.80"), None);
+        assert_eq!(relay_of("192.168.3.56"), None);
+        assert_eq!(relay_of("not an address"), None);
     }
 }
