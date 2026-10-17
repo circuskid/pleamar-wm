@@ -262,7 +262,6 @@ pub fn write_layout(monitor: &str, name: &str) -> Result<(), String> {
     std::fs::write(&path, out.join("\n") + "\n").map_err(|e| format!("could not write {path}: {e}"))
 }
 
-/// The session's configuration, read once.
 /// The file that says the monitors must not go dark (`pleamar-wm idle hold`):
 /// it is there, or it is not, so that a script can change it while the session
 /// runs, which `session.conf` (read once) cannot.
@@ -271,6 +270,7 @@ pub fn idle_hold_path() -> std::path::PathBuf {
     std::path::PathBuf::from(dir).join("pleamar-wm-idle-hold")
 }
 
+/// The session's configuration, read once.
 pub fn get() -> &'static Config {
     static CONFIG: OnceLock<Config> = OnceLock::new();
     CONFIG.get_or_init(read)
