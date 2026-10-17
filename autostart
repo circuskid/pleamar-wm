@@ -4,7 +4,8 @@
 # A line that only makes sense in pleamar-wm's session starts with `wm:`.
 #
 # The wallpaper: the one Marea has saved (session.sh reads it), under everything.
-wm: swaybg -i "${PLEAMAR_WALLPAPER:-/usr/share/wallpapers/cachyos-wallpapers/GreenFeathers.png}" -m fill
+# Without that picture, a plain colour; without swaybg, the log says so.
+wm: w="${PLEAMAR_WALLPAPER:-/usr/share/wallpapers/cachyos-wallpapers/GreenFeathers.png}"; if ! command -v swaybg > /dev/null; then echo "autostart · swaybg is not installed: the desktop has no wallpaper (install swaybg)" >&2; elif [ -f "$w" ]; then exec swaybg -i "$w" -m fill; else echo "autostart · no picture at $w: a plain colour instead" >&2; exec swaybg -c '#12201e'; fi
 # Marea, as a program of the session (layer-shell), as she is on Hyprland.
 marea start
 # Whoever asks for your password when a program needs root (mounting a disk,
