@@ -232,7 +232,7 @@ return function(shared)
                 worker = id
                 local recent = {}
                 for k = math.max(1, #history - 40), #history do recent[#recent + 1] = history[k] end
-                write(worker, json.encode({ type = "start", model = chosen_model, fallback = "openai-codex/gpt-5.5", locale = fact.locale,
+                write(worker, json.encode({ type = "start", model = chosen_model, fallback = "openai-codex/gpt-6-astra", locale = fact.locale,
                                             history = recent, build = shared.creations.context() }) .. "\n")
             end)
         end)

@@ -930,6 +930,8 @@ fn run(max: usize, to_render: Sender<ToRender>, rx: Channel<ToNest>, ready: std:
         // Not in a screenless test session that names its own autostart.
         if std::env::var_os("PLEAMAR_WM_AUTOSTART").is_none() {
             if let Some(kept) = crate::config::user_dir().and_then(|d| std::fs::read_to_string(format!("{d}/creations.autostart")).ok()) {
+                // They start with Build's `pleamar`: there, if this program moved.
+                crate::build::link_pleamar();
                 state.autostart.extend(kept.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).map(str::to_owned));
             }
         }

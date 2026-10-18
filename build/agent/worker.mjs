@@ -407,7 +407,13 @@ async function prompt(m) {
     signal.addEventListener("abort", stop, { once: true });
     try {
         await session.prompt(text, images.length > 0 ? { images } : undefined);
-        send({ type: signal.aborted ? "cancelled" : "done" });
+        //  A model that failed ends the turn without a word: said, not lost.
+        const last = [...(session.messages ?? [])].reverse().find((x) => x?.role === "assistant");
+        if (!signal.aborted && last?.stopReason === "error") {
+            send({ type: "failed", reason: String(last.errorMessage || "the model failed").slice(0, 300) });
+        } else {
+            send({ type: signal.aborted ? "cancelled" : "done" });
+        }
     } catch (e) {
         send(signal.aborted ? { type: "cancelled" } : { type: "failed", reason: String(e?.message || e).slice(0, 300) });
     } finally {

@@ -460,16 +460,26 @@ scene Creation {
     --  Under a new creation: the biggest surface of another program's that
     --  it covers mostly, on its monitor (not hers, not a creation, not a
     --  wallpaper).
+    --  What was drawn over: a surface of another program that the drawing
+    --  covers for the most part (a bar drawn over, not a desktop drawn on).
+    --  Only one that can be told apart from the rest of its program's: the
+    --  surfaces are named by program, scene and name, and a program whose
+    --  surfaces share them (Marea's, all «pleamar» and of every size) would
+    --  go whole. Never Build's own.
     local function under(r, monitor_index, done)
         layers(function(list)
             local best, best_area = nil, 0
             for _, l in ipairs(list) do
-                local mine = l.who:find("/creations/", 1, true) or l.who:match("build%.plm$") ~= nil
-                if not mine and not l.hidden and l.level ~= "background" and l.monitor == monitor_index then
+                local mine = l.who:find("/creations/", 1, true) or l.who:match("build%.plm$") ~= nil or l.who:match("^pleamar%-wm") ~= nil
+                local alone = true
+                for _, o in ipairs(list) do
+                    if same(o, l) and (o.w ~= l.w or o.h ~= l.h) then alone = false end
+                end
+                if not mine and alone and not l.hidden and l.level ~= "background" and l.monitor == monitor_index then
                     local ix = math.max(0, math.min(l.x + l.w, r.x + r.w) - math.max(l.x, r.x))
                     local iy = math.max(0, math.min(l.y + l.h, r.y + r.h) - math.max(l.y, r.y))
                     local area = ix * iy
-                    if area > 0.5 * math.min(l.w * l.h, r.w * r.h) and area > best_area then best, best_area = l, area end
+                    if area > 0.5 * l.w * l.h and area > best_area then best, best_area = l, area end
                 end
             end
             done(best)

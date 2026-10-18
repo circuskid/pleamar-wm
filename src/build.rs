@@ -57,6 +57,21 @@ fn materialize(dir: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// `pleamar`, for what Build starts, checks and reads (the creations, their
+/// check, the docs): a link to this program, which is pleamar when called
+/// so, in its folder's bin/. Made again when this program has moved.
+pub fn link_pleamar() -> Option<String> {
+    let bin = format!("{}/bin", dir());
+    let link = format!("{bin}/pleamar");
+    let me = std::env::current_exe().ok()?;
+    if std::fs::read_link(&link).ok().as_deref() != Some(me.as_path()) {
+        std::fs::create_dir_all(&bin).ok()?;
+        let _ = std::fs::remove_file(&link);
+        std::os::unix::fs::symlink(&me, &link).ok()?;
+    }
+    Some(bin)
+}
+
 /// Its files where they run, for the control centre too (it signs in with
 /// the same engine).
 pub fn prepare() {
@@ -89,7 +104,19 @@ pub fn run(args: &[String]) {
         eprintln!("build · {dir}: {e}");
         std::process::exit(1);
     }
+    // `pleamar` first on its PATH: the one inside this program, whether
+    // another is installed or not.
+    let path = match (link_pleamar(), std::env::var("PATH")) {
+        (Some(bin), Ok(p)) => Some(format!("{bin}:{p}")),
+        (Some(bin), Err(_)) => Some(bin),
+        _ => None,
+    };
     // SAFETY: one thread still: nothing else reads the environment yet.
-    unsafe { std::env::set_var("BUILD_ON", "1") };
+    unsafe {
+        std::env::set_var("BUILD_ON", "1");
+        if let Some(p) = path {
+            std::env::set_var("PATH", p);
+        }
+    }
     pleamar::run_with(vec!["--scene".to_owned(), format!("{dir}/build.plm"), "--no-hud".to_owned()]);
 }

@@ -23,6 +23,12 @@ mod screen;
 mod session;
 
 fn main() {
+    // Called `pleamar` (Build's link to it): pleamar itself, the one inside,
+    // for what Build starts and checks where no pleamar is installed.
+    if std::env::args_os().next().is_some_and(|a| std::path::Path::new(&a).file_name().is_some_and(|n| n == "pleamar")) {
+        pleamar::run();
+        return;
+    }
     pleamar::provide_windows(|max, to_render| {
         let tx = nest::start(max, to_render)?;
         Some(Box::new(move |m| {
