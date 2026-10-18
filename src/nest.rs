@@ -932,7 +932,12 @@ fn run(max: usize, to_render: Sender<ToRender>, rx: Channel<ToNest>, ready: std:
             if let Some(kept) = crate::config::user_dir().and_then(|d| std::fs::read_to_string(format!("{d}/creations.autostart")).ok()) {
                 // They start with Build's `pleamar`: there, if this program moved.
                 crate::build::link_pleamar();
-                state.autostart.extend(kept.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).map(str::to_owned));
+                // Each once, even if written twice.
+                for line in kept.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')) {
+                    if !state.autostart.iter().any(|a| a == line) {
+                        state.autostart.push(line.to_owned());
+                    }
+                }
             }
         }
     }

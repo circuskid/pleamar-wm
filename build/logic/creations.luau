@@ -971,15 +971,15 @@ scene Creation {
     --  creation's id, so it goes when the creation goes.
     local AUTOSTART = config_dir .. "/creations.autostart"
     local HIDE = config_dir .. "/creations.hide"
-    local function lines_add(file, line)
-        run("sh", { "-c", 'mkdir -p "$(dirname "$0")" && printf "%s\n" "$1" >> "$0"', file, line })
-    end
-    local function lines_drop(file, id)
-        run("sh", { "-c", '[ -f "$0" ] && grep -q -F "# creation $1" "$0" && grep -v -F "# creation $1" "$0" > "$0.new" && mv "$0.new" "$0"; true', file, id })
+    --  The creation's lines out of a file, and then its new one if it has
+    --  one, in a single step: two steps at once raced, and kept it twice.
+    --  (grep -v with nothing left fails: the file is emptied all the same.)
+    local function lines_set(file, id, line)
+        run("sh", { "-c", [[mkdir -p "$(dirname "$0")" && touch "$0" && { grep -v -F "# creation $1" "$0" || true; } > "$0.new" && { [ -z "$2" ] || printf "%s\n" "$2" >> "$0.new"; } && mv "$0.new" "$0"]], file, id, line or "" })
     end
     local function forget_everywhere(id)
-        lines_drop(AUTOSTART, id)
-        lines_drop(HIDE, id)
+        lines_set(AUTOSTART, id)
+        lines_set(HIDE, id)
         unbind_keys(id)
     end
     on("b_keep", function()
@@ -994,12 +994,13 @@ scene Creation {
             finish()
             return
         end
-        forget_everywhere(record.id)
-        lines_add(AUTOSTART, string.format("%s --scene %s --no-hud  # creation %s", pleamar_path, path_of(record.id, "scene.plm"), record.id))
+        lines_set(AUTOSTART, record.id, string.format("%s --scene %s --no-hud  # creation %s", pleamar_path, path_of(record.id, "scene.plm"), record.id))
+        local hide = nil
         if record.replaces then
             local prog, scene = tostring(record.replaces.who):match("^(%S+)%s*(.*)$")
-            lines_add(HIDE, string.format("%s\t%s\t%s  # creation %s", prog or "", scene or "", tostring(record.replaces.ns or ""), record.id))
+            hide = string.format("%s\t%s\t%s  # creation %s", prog or "", scene or "", tostring(record.replaces.ns or ""), record.id)
         end
+        lines_set(HIDE, record.id, hide)
         if record.keys then
             for _, k in ipairs(record.keys) do log("build · its key " .. k .. " stays") end
         end
