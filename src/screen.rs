@@ -331,15 +331,34 @@ fn stacked(st: &ScreenState) -> Vec<Item> {
 
 /// The pointer at that point of a monitor: the highest surface that takes
 /// it there —a named one only where it has zones, a program's where its
-/// input region says—; the scene's own takes whatever is left above it.
+/// input region says—; the scene's own takes whatever is left above it,
+/// except where it has neither a window nor a zone and a program's widget
+/// on the desktop level (under the windows) takes it.
 pub fn pointer_at(st: &ScreenState, (x, y): (f64, f64)) -> Hit {
     let inside = |r: &[i32; 4], px: f64, py: f64| px >= r[0] as f64 && py >= r[1] as f64 && px < (r[0] + r[2]) as f64 && py < (r[1] + r[3]) as f64;
     let scene = |l: &Layer| Hit::Scene(Some((l.origin.0 + (x - l.rect[0] as f64) as f32 / l.scale, l.origin.1 + (y - l.rect[1] as f64) as f32 / l.scale)));
-    for item in stacked(st).iter().rev() {
+    let stack = stacked(st);
+    for (i, item) in stack.iter().enumerate().rev() {
         match item {
             Item::Scene(k) => {
                 let l = &st.layers[*k];
                 if l.main {
+                    // A widget a program keeps on the desktop (layer-shell's
+                    // bottom level) is under the scene's own surface: it took
+                    // every click there, and a clock or a timer on the desktop
+                    // could not be pressed even with nothing over it. Not the
+                    // wallpaper's level: the desktop's own clicks stay the scene's.
+                    let (lx, ly) = ((x - l.rect[0] as f64) / l.scale as f64, (y - l.rect[1] as f64) / l.scale as f64);
+                    let its_own = layers::window_at(&st.name, x, y) || l.region.iter().any(|b| lx >= b[0] as f64 && ly >= b[1] as f64 && lx < b[2] as f64 && ly < b[3] as f64);
+                    if !its_own {
+                        let under = stack[..i].iter().rev().find_map(|it| match it {
+                            Item::Client(c) if st.clients[*c].level == 1 && st.clients[*c].takes(x, y) => Some(&st.clients[*c]),
+                            _ => None,
+                        });
+                        if let Some(c) = under {
+                            return Hit::Client(c.id, c.local(x, y));
+                        }
+                    }
                     return scene(l);
                 }
                 let (lx, ly) = ((x - l.rect[0] as f64) / l.scale as f64, (y - l.rect[1] as f64) / l.scale as f64);

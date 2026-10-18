@@ -215,6 +215,11 @@ pub fn shown(slot: usize) -> Option<(String, [i32; 4])> {
     SHOWN.lock().unwrap().get(slot).cloned().flatten().filter(|(m, _)| !m.is_empty())
 }
 
+/// Whether a window is seen at that point of that monitor (its pixels).
+pub fn window_at(monitor: &str, x: f64, y: f64) -> bool {
+    SHOWN.lock().unwrap().iter().flatten().any(|(m, r)| m == monitor && x >= r[0] as f64 && y >= r[1] as f64 && x < (r[0] + r[2]) as f64 && y < (r[1] + r[3]) as f64)
+}
+
 /// The windows a rule calls private (`window app=… private`): never seen
 /// in what is shared of a whole monitor, nor in a screenshot of it.
 static PRIVATE: Mutex<Vec<bool>> = Mutex::new(Vec::new());
