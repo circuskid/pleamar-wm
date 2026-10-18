@@ -528,8 +528,10 @@ scene Creation {
     end
     --  A kept one runs on its own (the session started it, or keeping it
     --  did): told to leave by its own socket, which is its id.
+    --  Every copy of it: one started while another ran listens as
+    --  «id-PID», and told only by its id the others went on.
     local function stop_kept(id)
-        run("pleamar", { "--say", id, "quit" }, function() end, { errors = true })
+        run("sh", { "-c", [[d="${PLEAMAR_SOCKETS:-${XDG_RUNTIME_DIR:-/tmp}/pleamar}"; for s in "$d/$0.sock" "$d/$0"-*.sock; do [ -S "$s" ] && pleamar --say "$(basename "$s" .sock)" quit; done; true]], id }, function() end, { errors = true })
     end
     local function create(r)
         local kind, surface, w, h = shape(r)
@@ -1026,7 +1028,9 @@ scene Creation {
         log("build · kept " .. record.id)
         finish()
     end)
-    on("b_discard", function()
+    local discard
+    on("b_discard", function() discard() end)
+    discard = function()
         if not current then return end
         stop_scene()
         if current.app then run("rm", { "-f", desktop_file(current.id) }) end
@@ -1039,7 +1043,7 @@ scene Creation {
         index_save(ix)
         log("build · thrown away " .. current.id)
         finish()
-    end)
+    end
     --  Leaving it in the middle leaves it as it is: not kept, it stops (and
     --  what it replaced comes back); opening it again carries on.
     local function leave_current()
@@ -1190,6 +1194,13 @@ scene Creation {
         end
         if sure_timer then cancel(sure_timer); sure_timer = nil end
         sure_id = nil
+        --  The one open in the chat: thrown away from there, or leaving it
+        --  would start it again and save it as kept.
+        if current and current.id == id then
+            discard()
+            show_list()
+            return
+        end
         local record = load(id)
         stop_kept(id)
         if record then
