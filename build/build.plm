@@ -76,6 +76,7 @@ scene Build {
     fact sx1 = 0
     fact sy1 = 0
     event shot_end ->
+    fact looking = false               // the builder takes a picture: out of it
     //  What you built before, where it is: a click opens it.
     model olds max 16 { x: number; y: number; w: number; h: number; s: number; name: text }
     event open_old ->                  // `emit open_old(2)`
@@ -93,7 +94,7 @@ scene Build {
         screens: each max 4
         keyboard: on_demand
         captures: hidden
-        open: shown > 0.01
+        open: shown > 0.01 and not looking
         let W = mode.width
         let H = mode.height
         let here = draw_screen == screen.index

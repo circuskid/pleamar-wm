@@ -248,6 +248,17 @@ return function(shared)
         local acts = false
         if name == "find" then for _, a in ipairs(list) do if FIND_ACTS[a] then acts = true end end end
         if READERS[name] and not acts then return nil end
+        --  curl that only reads a page and prints it (a logo's SVG, a page's
+        --  data): flags among -s -S -L -f, and https addresses. Saving to a
+        --  file, sending data or anything else is asked.
+        if name == "curl" and #list > 0 then
+            local only_reads = true
+            for _, a in ipairs(list) do
+                a = tostring(a)
+                if not (a:match("^%-[sSLf]+$") or a == "--compressed" or a:match("^https://[%w%-%.]+/[%w%-%._~/%%@+=&?]*$")) then only_reads = false end
+            end
+            if only_reads then return nil end
+        end
         local warn = INTERPRETERS[name] and ("\n" .. tr("It is a program that runs other programs: it can do anything on your computer.")) or ""
         return { ask = tr("The builder wants to run on your computer:") .. "\n" .. command .. warn .. "\n" .. tostring(args.why or ""), detail = tr("Running a program") }
     end
@@ -801,13 +812,35 @@ scene Creation {
             x1, y1 = math.min(r.mw, x1 + m), math.min(r.mh, y1 + m)
             local ox, oy = r.gx - r.x, r.gy - r.y
             local dest = STATE .. "/build-look.png"
-            run("grim", { "-g", string.format("%d,%d %dx%d", math.floor(ox + x0), math.floor(oy + y0), math.floor(x1 - x0), math.floor(y1 - y0)), dest }, function(out, code)
-                if code == 0 then
-                    done(true, string.format("The creation on the screen now, with %d px around it.", m), { image = { path = "/state/build-look.png" } })
-                else
-                    done(false, "Could not take the picture: " .. tostring(out))
-                end
-            end, { errors = true })
+            --  Where it is, in words: a picture alone does not say that its
+            --  side is the monitor's edge, or 6 px short of it.
+            local words = string.format("The creation on the screen now, with %d px around it. The picture is x %d…%d, y %d…%d of the monitor (%dx%d)", m, x0, x1, y0, y1, r.mw, r.mh)
+            local edges = {}
+            if x0 <= 0 then edges[#edges + 1] = "its left side is the monitor's left edge" end
+            if x1 >= r.mw then edges[#edges + 1] = "its right side is the monitor's right edge" end
+            if y0 <= 0 then edges[#edges + 1] = "its top is the monitor's top edge" end
+            if y1 >= r.mh then edges[#edges + 1] = "its bottom is the monitor's bottom edge" end
+            if #edges > 0 then words = words .. "; " .. table.concat(edges, ", ") end
+            words = words .. "."
+            if sx then
+                words = words .. string.format(" Its surface is at %d,%d, %dx%d: %d px from the left edge, %d from the right, %d from the top, %d from the bottom.",
+                    sx, sy, sw, sh, sx, r.mw - (sx + sw), sy, r.mh - (sy + sh))
+            end
+            --  Build mode's own marks (its edge, the corners) out of the
+            --  picture, and the agent's light on the monitor's edge too.
+            local lit = poked
+            api.release_cursor()
+            fact.looking = true
+            after(lit and 450 or 120, function()
+                run("grim", { "-g", string.format("%d,%d %dx%d", math.floor(ox + x0), math.floor(oy + y0), math.floor(x1 - x0), math.floor(y1 - y0)), dest }, function(out, code)
+                    fact.looking = false
+                    if code == 0 then
+                        done(true, words, { image = { path = "/state/build-look.png" } })
+                    else
+                        done(false, "Could not take the picture: " .. tostring(out))
+                    end
+                end, { errors = true })
+            end)
         elseif tool == "pleamar_docs" then
             local topic = tostring(args.topic or "reference")
             local argv = topic == "grammar" and { "--grammar" } or { "--docs", topic }
