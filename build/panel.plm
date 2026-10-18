@@ -48,6 +48,8 @@ part Panel {
     //  Where the panel is: the monitor you drew on, on the side away from
     //  what you drew.
     fact side: left | right = right
+    fact c.kept = false                // the one open is yours already
+    event flip_side ->                 // the panel to the other side
     fact panel_screen = 0
     prop pane = 0 ~280ms
     follow pane = if(on and (building or view == list), 1, 0)
@@ -174,16 +176,25 @@ part Panel {
             prop throw.glow = 0 ~140ms
             prop keep.glow = 0 ~140ms
             prop back.glow = 0 ~140ms
+            prop flip.glow = 0 ~140ms
+            //  ⇄: the panel to the other side, in either view.
+            let fx = if(view == list, 350, 196)
+            box { at: fx, 34; size: 26, 26; corner: 8; color: #1f2a28; opacity: 70% + 30% * flip.glow }
+            path { at: fx - 7, 30; color: ink; stroke: 1.4
+                   move 10, -3; line 13, 0; line 10, 3; line 13, 0; line 0, 0 }
+            path { at: fx - 7, 38; color: ink; stroke: 1.4
+                   move 3, -3; line 0, 0; line 3, 3; line 0, 0; line 13, 0 }
+            zone box flip_btn { at: fx, 34; size: 26, 26; corner: 8; cursor: pointer; label: "The panel to the other side" }
             group {
                 show: view == chat
-                text build.name { at: 20, 26; anchor: left center; size: 15; weight: 800; color: ink; width: 190; lines: 1 }
-                text c.model { at: 20, 46; anchor: left center; size: 10; color: dim; width: 190; lines: 1 }
+                text build.name { at: 20, 26; anchor: left center; size: 15; weight: 800; color: ink; width: 158; lines: 1 }
+                text c.model { at: 20, 46; anchor: left center; size: 10; color: dim; width: 158; lines: 1 }
                 box { at: 248, 34; size: 56, 26; corner: 8; color: #1f2a28; opacity: 80% + 20% * undo.glow }
                 text "Undo" { at: 248, 34; anchor: center; size: 11; weight: 600; color: ink }
                 box { at: 318, 34; size: 72, 26; corner: 8; color: #1f2a28; opacity: 80% + 20% * throw.glow }
                 text "Throw away" { at: 318, 34; anchor: center; size: 11; weight: 600; color: coral }
                 box { at: 400, 34; size: 80, 26; corner: 8; color: mint; opacity: 80% + 20% * keep.glow }
-                text "Keep it" { at: 400, 34; anchor: center; size: 11; weight: 800; color: coal }
+                text pick(c.kept, "Keep it", "Done") { at: 400, 34; anchor: center; size: 11; weight: 800; color: coal }
                 zone box undo_btn { at: 248, 34; size: 56, 26; corner: 8; cursor: pointer; label: "Undo the last version" }
                 zone box throw_btn { at: 318, 34; size: 72, 26; corner: 8; cursor: pointer; label: "Throw it away" }
                 zone box keep_btn { at: 400, 34; size: 80, 26; corner: 8; cursor: pointer; label: "Keep it" }
@@ -282,5 +293,8 @@ part Panel {
         on press throw_btn { emit b_discard }
         on press keep_btn { emit b_keep }
         on press back_btn { view = chat }
+        on enter flip_btn { flip.glow: 1 }
+        on leave flip_btn { flip.glow: 0 }
+        on press flip_btn { emit flip_side }
     }
 }

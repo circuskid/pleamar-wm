@@ -2,6 +2,7 @@
 // `locale` (the system's language) chooses.
 library BuildSpanish {
     translations es {
+        "The panel to the other side" = "El panel al otro lado"
         "%d pictures" = "%d imágenes"
         "A bar" = "Una barra"
         "A bar along the top, a dock, a clock in a corner, a window… then Done" = "Una barra arriba, un dock, un reloj en una esquina, una ventana… y luego Hecho"

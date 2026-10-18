@@ -514,22 +514,14 @@ scene Creation {
         fact["reg.x"], fact["reg.y"], fact["reg.w"], fact["reg.h"] = r.x or 0, r.y or 0, r.w or 0, r.h or 0
         fact["reg.s"] = r.monitor_index or 0
         fact.made = #(record.versions or {}) > 0 or not fact.sketch
+        --  Yours already: its changes are kept as they are made, and the head
+        --  says Done instead of Keep it.
+        fact["c.kept"] = record.kept == true
         if chat then chat.begin(record.history or {}, record.rows or {}) end
         --  One from someone else does not run until you allow what it asks for.
         if record.pending then review(record) else start_scene() end
     end
     --  A drawing that falls mostly on a creation already there edits it.
-    local function overlapping(r)
-        for _, item in ipairs(index().list) do
-            if not item.thrown and item.region and item.region.monitor == r.monitor then
-                local o = item.region
-                local ix = math.max(0, math.min(o.x + o.w, r.x + r.w) - math.max(o.x, r.x))
-                local iy = math.max(0, math.min(o.y + o.h, r.y + r.h) - math.max(o.y, r.y))
-                if ix * iy > 0.5 * math.min(o.w * o.h, r.w * r.h) then return item.id end
-            end
-        end
-        return nil
-    end
     local function load(id)
         local ok, t = pcall(sys.ask, "files.read", where(id) .. "/creation.json", "json")
         return (ok and type(t) == "table") and t or nil
@@ -574,12 +566,9 @@ scene Creation {
     --  already there, opened again).
     local function chosen(m, x, y, w, h)
         if w < 8 or h < 8 then return end
+        --  Always a new one: one you built opens from its name on the screen
+        --  or from What you built, not by drawing near where it once was.
         local r = { monitor = m.name, mw = m.w, mh = m.h, x = x, y = y, w = w, h = h, gx = m.x + x, gy = m.y + y, monitor_index = m.index }
-        local again = overlapping(r)
-        if again then
-            local record = load(again)
-            if record then stop_kept(again); open(record); return end
-        end
         create(r)
     end
     --  From the drawing (draw.luau): a region of a monitor, and the
@@ -970,6 +959,7 @@ scene Creation {
         record_save()
         current = nil
         fact.building = false
+        fact["c.kept"] = false
         fact.made = false
         fact["reg.w"] = 0
         text["build.name"] = ""

@@ -64,6 +64,8 @@ return function(shared)
     end
     on("toggle", function() if fact.on then turn_off() else turn_on() end end)
     on("leave", turn_off)
+    --  The panel to the other side of the monitor (the ⇄ in its head).
+    on("flip_side", function() fact.side = fact.side == "left" and "right" or "left" end)
     on("start", function() if not fact.on then turn_on() end end)
     --  Started by `pleamar-wm build`: on at once.
     if (sys.ask("env", "BUILD_ON") or "") == "1" then after(50, turn_on) end

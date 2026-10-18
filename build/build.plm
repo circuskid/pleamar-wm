@@ -99,7 +99,8 @@ scene Build {
         box { from: 6, 6; size: W - 12, H - 12; corner: 12; stroke: 1; color: mint; opacity: 25% * shown }
 
         //  The canvas: it takes the desktop only while drawing is chosen.
-        zone box canvas { from: 0, 0; size: W, H; cursor: crosshair; active: on and tool != hand and not building }
+        //  Not while What you built is open: its panel is what you use then.
+        zone box canvas { from: 0, 0; size: W, H; cursor: crosshair; active: on and tool != hand and not building and view != list }
         on press canvas while tool == pen { drawing = true; draw_screen = screen.index; pt = floor(local.x) * 8192 + floor(local.y) }
         on drag canvas while tool == pen { pt = floor(local.x) * 8192 + floor(local.y) }
         on release canvas while tool == pen { drawing = false; emit stroke_end }
@@ -111,17 +112,24 @@ scene Build {
         //  A dim while drawing, so the strokes read.
         box { from: 0, 0; size: W, H; color: #04100d; opacity: if(tool != hand and not building, 22%, 0%) * shown }
 
-        //  What you built before: a dashed outline and its name.
+        //  What you built before: its outline, and its name to open it again
+        //  (only the name: inside the outline is still for drawing, so
+        //  something new can go over or beside it).
         component Old(r: record) {
             prop lit = 0 ~140ms
+            let ly = if(r.y >= 30, r.y - 26, r.y + 6)
+            let here = r.s == screen.index and tool != hand and not building and view != list
             group {
-                show: r.s == screen.index and tool != hand and not building
-                box { from: r.x, r.y; size: r.w, r.h; corner: 10; color: mint; opacity: 6% + 14% * lit }
-                box { from: r.x, r.y; size: r.w, r.h; corner: 10; stroke: 1.5; color: mint; opacity: 50% + 40% * lit }
-                box { from: r.x, r.y - 24; size: 170, 20; corner: 6; color: coal; opacity: 85% }
-                text r.name { at: r.x + 8, r.y - 14; anchor: left center; size: 11; weight: 700; color: mint; width: 156; lines: 1 }
+                show: here
+                box { from: r.x, r.y; size: r.w, r.h; corner: 10; color: mint; opacity: 4% + 10% * lit }
+                box { from: r.x, r.y; size: r.w, r.h; corner: 10; stroke: 1.5; color: mint; opacity: 40% + 50% * lit }
+                box { from: r.x, ly; size: 180, 22; corner: 7; color: mix(coal, #24413a, lit); opacity: 92% }
+                box { from: r.x, ly; size: 180, 22; corner: 7; stroke: 1; color: mint; opacity: 30% + 50% * lit }
+                path { at: r.x + 9, ly + 4; color: mint; stroke: 1.3
+                       move 1, 13; line 10, 4; line 12, 6; line 3, 15; line 0, 16; close }
+                text r.name { at: r.x + 28, ly + 11; anchor: left center; size: 11; weight: 700; color: mint; width: 144; lines: 1 }
             }
-            zone box old_zone { from: r.x, r.y; size: r.w, r.h; corner: 10; cursor: pointer; active: r.s == screen.index and tool != hand and not building and not drawing; label: "Open it again" }
+            zone box old_zone { from: r.x, ly; size: 180, 22; corner: 7; cursor: pointer; active: here and not drawing; label: "Open it again" }
             on enter old_zone { lit: 1 }
             on leave old_zone { lit: 0 }
             on press old_zone { emit open_old(r.index) }
@@ -192,7 +200,7 @@ scene Build {
 
         //  What to do, the first time, in the middle.
         group {
-            show: tool != hand and not building and strokes < 1 and not boxed and not drawing
+            show: tool != hand and not building and strokes < 1 and not boxed and not drawing and view != list
             text "Draw the shape of what you want, where you want it" { at: W / 2, H / 2 - 12; anchor: center; size: 20; weight: 600; color: ink; opacity: 85% * shown }
             text "A bar along the top, a dock, a clock in a corner, a window… then Done" { at: W / 2, H / 2 + 18; anchor: center; size: 13; color: ink; opacity: 60% * shown }
         }
