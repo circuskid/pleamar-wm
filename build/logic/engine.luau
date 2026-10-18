@@ -251,14 +251,15 @@ return function(shared)
         if state == "thinking" or state == "acting" or state == "awaiting" or state == "starting" then return end
         if not shared.creations.active() then return end
         text["c.input"] = ""
-        local images, pictures = shared.creations.take_refs()
+        local images, pictures, about = shared.creations.take_refs()
         add(1, pictures ~= "" and (words .. "\n📎 " .. pictures) or words)
         history[#history + 1] = { role = "user", text = words }
         stop_idle()
         start_worker()
         fact["c.state"] = "thinking"
         status(tr("Thinking…"))
-        send({ type = "prompt", text = words, now = os.date("%Y-%m-%d %H:%M, %A"), images = images })
+        --  What each picture is goes with the words (not on the screen).
+        send({ type = "prompt", text = about and (words .. "\n\n" .. about) or words, now = os.date("%Y-%m-%d %H:%M, %A"), images = images })
     end)
     local function decide(i, yes)
         local first = math.max(1, #rows - ROWS + 1)

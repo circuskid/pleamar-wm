@@ -185,8 +185,8 @@ return function(shared)
                 run("magick", argv, function(_, c1)
                     run("grim", { "-g", string.format("%d,%d %dx%d", m.x + cx, m.y + cy, cw, ch), under }, function(_, c2)
                         local pictures = {}
-                        if c1 == 0 then pictures[#pictures + 1] = sketch end
-                        if c2 == 0 then pictures[#pictures + 1] = under end
+                        if c1 == 0 then pictures[#pictures + 1] = { path = sketch, what = "sketch" } end
+                        if c2 == 0 then pictures[#pictures + 1] = { path = under, what = "under" } end
                         --  The drawing stays, as its sketch, until it is built.
                         fact.sketch = true
                         creations.from_drawing(m, x0, y0, w, h, pictures)

@@ -590,7 +590,7 @@ scene Creation {
     function api.from_drawing(m, x, y, w, h, pictures)
         if current then return end
         chosen(m, x, y, w, h)
-        for _, p in ipairs(pictures or {}) do take_picture(p) end
+        for _, p in ipairs(pictures or {}) do take_picture(p.path, nil, p.what) end
     end
     --  Where each running creation is now, by its id: its surface on the
     --  screen, which may not be where it was drawn (one you can drag).
@@ -883,7 +883,11 @@ scene Creation {
         text["c.hint"] = words or ""
         if words then after(4000, function() text["c.hint"] = "" end) end
     end
-    take_picture = function(source, done_ok)
+    --  `what`: "sketch" (the user's drawing), "under" (what the screen had
+    --  there), or nothing for a reference the user chose. The builder is
+    --  told which is which: the pen's strokes and the wallpaper are not the
+    --  design.
+    take_picture = function(source, done_ok, what)
         if #refs >= 4 then hint(tr("Four pictures at most")) return end
         ref_n += 1
         local name = string.format("ref-%d-%d.png", os.time(), ref_n)
@@ -891,7 +895,7 @@ scene Creation {
         run("mkdir", { "-p", STATE .. "/refs" }, function()
             run("magick", { source .. "[0]", "-resize", "1568x1568>", dest }, function(out, code)
                 if code ~= 0 then hint(tr("That is not a picture it can read")) return end
-                refs[#refs + 1] = { local_path = dest, path = "/state/refs/" .. name }
+                refs[#refs + 1] = { local_path = dest, path = "/state/refs/" .. name, what = what }
                 show_refs()
                 if done_ok then done_ok() end
             end, { errors = true })
@@ -957,12 +961,19 @@ scene Creation {
     --  For the message being sent: its pictures, and the chips emptied.
     function api.take_refs()
         if #refs == 0 then return nil, "" end
-        local images = {}
-        for k, r in ipairs(refs) do images[k] = { path = r.path } end
+        local images, notes = {}, {}
+        local SAYS = {
+            sketch = "the user's rough drawing on the screen: where the piece goes and roughly its outline. The pen's mint strokes are only the pen, not a colour or a part of the design",
+            under = "what the screen has there now, under the drawing (their desktop as it is, its wallpaper): context for where it sits, not part of the design",
+        }
+        for k, r in ipairs(refs) do
+            images[k] = { path = r.path }
+            notes[k] = string.format("%d — %s", k, SAYS[r.what] or "a picture the user chose: a reference for what they want. Copy the piece they mean, not the wallpaper, mockup frame or other windows around it")
+        end
         local words = #refs == 1 and tr("a picture") or string.format(tr("%d pictures"), #refs)
         refs = {}
         show_refs()
-        return images, words
+        return images, words, "[The pictures with this message, in order: " .. table.concat(notes, ". ") .. ".]"
     end
 
     -- ── undo, keep, throw away ──
