@@ -16,8 +16,16 @@ scene Control {
     let dim = #a7b0ad
     let W = screen.width
     let H = screen.height
-    // Where the pages start, right of the sidebar.
+    // Where the pages start, right of the sidebar, and how wide they are:
+    // the window can be narrowed, and what is in them wraps to fit.
     let px = 264
+    let aw = max(W - px - 60, 240)
+    // The layouts in as many to a row as fit, and the card as tall as they need.
+    let lcols = clamp(floor((aw + 8) / 82), 1, 9)
+    let lrows = ceil(9 / lcols)
+    let lcard = 60 + lrows * 84
+    // The models, three to a row on a wide window, fewer on a narrow one.
+    let bcols = clamp(floor((aw + 10) / 240), 1, 3)
 
     fact page = 0                  // 0 layouts · 1 keys · 2 about · 3 build
     fact has.0 = false             // a monitor there (by the session's order)
@@ -121,20 +129,20 @@ scene Control {
     group {
         show: page == 0
         text "Layouts" { at: px, 44; size: 24; weight: 700; color: ink }
-        text "How each monitor lays its windows out. Super+W still turns any of them free and back." { at: px, 74; size: 12.5; color: dim }
+        text "How each monitor lays its windows out. Super+W still turns any of them free and back." { at: px, 74; size: 12.5; color: dim; width: W - px - 40; lines: 1 }
         text "pleamar-wm does not answer: the control centre works inside a pleamar-wm session." { at: px, 120; size: 13; color: #ef7a66; show: not reachable }
 
         repeat k in 0..4 {
             let here = pick(k, has.0, has.1, has.2, has.3)
             let sel = pick(k, sel.0, sel.1, sel.2, sel.3)
-            let y = 108 + k * 150
+            let y = 108 + k * (lcard + 14)
             group {
                 show: here
                 body {
                     color: card
                     rim: 12%
                     shadow: 0, 10, 26, 35%
-                    box { from: px - 4, y; size: W - px - 24, 136; corner: 16 }
+                    box { from: px - 4, y; size: W - px - 24, lcard; corner: 16 }
                 }
                 // The monitor: its shape, its name, and what it is now.
                 box { from: px + 16, y + 18; size: 26, 17; corner: 3; stroke: 1.5; color: mint }
@@ -143,8 +151,8 @@ scene Control {
                 text pick(k, now.0, now.1, now.2, now.3) { at: W - 46, y + 27; anchor: right center; size: 12; color: mint }
 
                 repeat l in 0..9 {
-                    let tx = px + 16 + l * 82
-                    let ty = y + 48
+                    let tx = px + 16 + mod(l, lcols) * 82
+                    let ty = y + 48 + floor(l / lcols) * 84
                     group {
                         prop on = 0 ~calm
                         follow on = if(sel == l, 1, 0)
@@ -223,7 +231,7 @@ scene Control {
     // first monitor's) would put them, moving there as they would ──
     let monitors = has.0 + has.1 + has.2 + has.3
     let shown.l = if(peek >= 0, peek, sel.0)
-    let pfy = 132 + monitors * 150
+    let pfy = 132 + monitors * (lcard + 14)
     let pfw = min(W - px - 24, (H - pfy - 60) * 16 / 9)
     let pfh = pfw * 9 / 16
     let pfx = px - 4
@@ -317,7 +325,7 @@ scene Control {
     group {
         show: page == 1
         text "Keys" { at: px, 44; size: 24; weight: 700; color: ink }
-        text "The same keys in every layout: each one does what fits the layout of the monitor it acts on." { at: px, 74; size: 12.5; color: dim }
+        text "The same keys in every layout: each one does what fits the layout of the monitor it acts on." { at: px, 74; size: 12.5; color: dim; width: W - px - 40; lines: 1 }
         body {
             color: card
             rim: 12%
@@ -335,7 +343,7 @@ scene Control {
                 }
             }
         }
-        text "Yours go in ~/.config/pleamar/keys.conf: start it with `defaults` to keep these. `pleamar-wm keys` shows them all." { at: px, 640; size: 11.5; color: dim; opacity: 80% }
+        text "Yours go in ~/.config/pleamar/keys.conf: start it with `defaults` to keep these. `pleamar-wm keys` shows them all." { at: px, 640; size: 11.5; color: dim; opacity: 80%; width: W - px - 40; lines: 2 }
     }
 
     // ── About ──
@@ -350,36 +358,38 @@ scene Control {
         }
         column { at: px + 22, 130; gap: 12
             text "{version}" { size: 15; weight: 650; color: ink }
-            text "A Wayland compositor whose window manager is a pleamar scene: every window rides a spring, and the layouts are lines anyone can rewrite (`pleamar-wm scene ~/.config/pleamar/wm`)." { size: 12.5; color: dim; line_height: 1.4; width: 560 }
-            text "Leader, columns, rows, grid, scrolling, marea, fractal, or free: one per monitor, picked here, from the strip at the top while a window is carried, or in session.conf (`layout DP-3 scrolling`)." { size: 12.5; color: dim; line_height: 1.4; width: 560 }
+            text "A Wayland compositor whose window manager is a pleamar scene: every window rides a spring, and the layouts are lines anyone can rewrite (`pleamar-wm scene ~/.config/pleamar/wm`)." { size: 12.5; color: dim; line_height: 1.4; width: min(560, aw) }
+            text "Leader, columns, rows, grid, scrolling, marea, fractal, or free: one per monitor, picked here, from the strip at the top while a window is carried, or in session.conf (`layout DP-3 scrolling`)." { size: 12.5; color: dim; line_height: 1.4; width: min(560, aw) }
             text "github.com/k4ditano/pleamar-wm" { size: 12.5; color: mint }
         }
     }
 
     // ── Build ──
-    component Account(k: number, name: text, about: text, signed: number) {
-        size: 720, 62
+    component Account(k: number, name: text, about: text, signed: number, w: number) {
+        size: w, 62
         prop glow = 0 ~140ms
-        box { from: 0, 61; size: 720, 1; color: ink; opacity: if(k < 2, 6%, 0) }
+        box { from: 0, 61; size: w, 1; color: ink; opacity: if(k < 2, 6%, 0) }
         ellipse { at: 12, 31; radius: 5; color: mix(#4a4f4d, mint, signed) }
         text name { at: 30, 22; anchor: left center; size: 14; weight: 700; color: ink }
-        text about { at: 30, 42; anchor: left center; size: 11.5; color: dim; width: 470; lines: 1 }
-        text pick(signed, "Not signed in", "Signed in") { at: 560, 31; anchor: right center; size: 11.5; color: mix(dim, mint, signed) }
-        box { at: 640, 31; size: 120, 32; corner: 10; color: mix(mix(#24302d, #2c4b44, glow), #2a2f2e, signed) }
-        text pick(signed, "Sign in", "Sign out") { at: 640, 31; anchor: center; size: 12; weight: 700; color: ink }
-        zone box act { at: 640, 31; size: 120, 32; corner: 10; cursor: pointer }
+        text about { at: 30, 42; anchor: left center; size: 11.5; color: dim; width: max(w - 280, 80); lines: 1 }
+        // Whether it is signed in, by the button; on a narrow window only the dot says it.
+        text pick(signed, "Not signed in", "Signed in") { at: w - 160, 31; anchor: right center; size: 11.5; color: mix(dim, mint, signed); show: w > 520 }
+        box { at: w - 60, 31; size: 120, 32; corner: 10; color: mix(mix(#24302d, #2c4b44, glow), #2a2f2e, signed) }
+        text pick(signed, "Sign in", "Sign out") { at: w - 60, 31; anchor: center; size: 12; weight: 700; color: ink }
+        zone box act { at: w - 60, 31; size: 120, 32; corner: 10; cursor: pointer }
         on enter act { glow: 1 }
         on leave act { glow: 0 }
         on press act while signed < 0.5 { emit b_login(k) }
         on press act while signed > 0.5 { emit b_logout(k) }
     }
-    component ModelPill(m: record) {
-        size: 230, 38
+    component ModelPill(m: record, x0: number, cols: number) {
+        let x = x0 + mod(m.index, cols) * 240
+        let y = 396 + floor(m.index / cols) * 48
         prop glow = 0 ~140ms
-        box { from: 0, 0; size: 230, 38; corner: 12; color: mix(mix(#1f2725, #26322f, glow), #2c4b44, m.on) }
-        box { from: 0, 0; size: 230, 38; corner: 12; stroke: 1.2; color: mint; opacity: 70% * m.on }
-        text m.name { at: 14, 19; anchor: left center; size: 12; weight: 600; color: ink; width: 205; lines: 1 }
-        zone box touch { from: 0, 0; size: 230, 38; corner: 12; cursor: pointer }
+        box { from: x, y; size: 230, 38; corner: 12; color: mix(mix(#1f2725, #26322f, glow), #2c4b44, m.on) }
+        box { from: x, y; size: 230, 38; corner: 12; stroke: 1.2; color: mint; opacity: 70% * m.on }
+        text m.name { at: x + 14, y + 19; anchor: left center; size: 12; weight: 600; color: ink; width: 205; lines: 1 }
+        zone box touch { from: x, y; size: 230, 38; corner: 12; cursor: pointer }
         on enter touch { glow: 1 }
         on leave touch { glow: 0 }
         on press touch { emit b_pick(m.index) }
@@ -387,11 +397,12 @@ scene Control {
     group {
         show: page == 3
         text "Build" { at: px, 44; size: 24; weight: 700; color: ink }
-        text "Draw what you want on the screen and ask for it: an AI builds it in pleamar, live. Super+B (pleamar-wm build), and again to finish." { at: px, 74; size: 12.5; color: dim; width: W - px - 240; lines: 2 }
+        text "Draw what you want on the screen and ask for it: an AI builds it in pleamar, live. Super+B (pleamar-wm build), and again to finish." { at: px, 74; size: 12.5; color: dim; width: W - px - 40; lines: 2 }
+        // On the title's row, so the words below have the whole width.
         prop go.glow = 0 ~140ms
-        box { at: W - 130, 58; size: 180, 40; corner: 13; color: mint; opacity: 85% + 15% * go.glow }
-        text "Start building" { at: W - 130, 58; anchor: center; size: 13; weight: 800; color: coal }
-        zone box start_build { at: W - 130, 58; size: 180, 40; corner: 13; cursor: pointer; label: "Build mode now" }
+        box { at: W - 110, 52; size: 160, 34; corner: 12; color: mint; opacity: 85% + 15% * go.glow }
+        text "Start building" { at: W - 110, 52; anchor: center; size: 12.5; weight: 800; color: coal }
+        zone box start_build { at: W - 110, 52; size: 160, 34; corner: 12; cursor: pointer; label: "Build mode now" }
         on enter start_build { go.glow: 1 }
         on leave start_build { go.glow: 0 }
         on press start_build { emit b_start }
@@ -403,25 +414,22 @@ scene Control {
         }
         text "WHO BUILDS" { at: px + 18, 134; size: 10.5; weight: 800; color: mint; opacity: 85% }
         column { at: px + 18, 150; gap: 0
-            Account(0, "ChatGPT", "Your ChatGPT plan (Plus, Pro…), through OpenAI's Codex", b.signed.0)
-            Account(1, "Claude", "Your Claude plan (Pro, Max), through Anthropic", b.signed.1)
-            Account(2, "GitHub Copilot", "Your Copilot plan, through GitHub", b.signed.2)
+            Account(0, "ChatGPT", "Your ChatGPT plan (Plus, Pro…), through OpenAI's Codex", b.signed.0, min(aw - 4, 760))
+            Account(1, "Claude", "Your Claude plan (Pro, Max), through Anthropic", b.signed.1, min(aw - 4, 760))
+            Account(2, "GitHub Copilot", "Your Copilot plan, through GitHub", b.signed.2, min(aw - 4, 760))
         }
         body {
             color: card
             rim: 12%
             shadow: 0, 10, 26, 35%
-            box { from: px - 4, 352; size: W - px - 24, 276; corner: 16 }
+            box { from: px - 4, 352; size: W - px - 24, max(276, 58 + ceil(max(b.models.count, 1) / bcols) * 48); corner: 16 }
         }
         text "THE MODEL" { at: px + 18, 374; size: 10.5; weight: 800; color: mint; opacity: 85% }
-        text "The strongest builds best: it writes the scene, looks at it and fixes it. Your choice: {b.chosen}" { at: px + 110, 374; size: 11; color: dim; width: W - px - 160; lines: 1 }
-        grid {
-            at: px + 18, 396; columns: 3; gap: 10; width: 720; row: 46
-            for m in b.models { ModelPill(m) }
-        }
+        text "The strongest builds best: it writes the scene, looks at it and fixes it. Your choice: {b.chosen}" { at: px + 110, 374; size: 11; color: dim; width: aw - 100; lines: 1 }
+        for m in b.models { ModelPill(m, px + 18, bcols) }
         text "Sign in with an account above and its models appear here." { at: px + 18, 410; size: 12; color: dim; show: b.asked and b.models.count < 1 }
         text "Asking the accounts…" { at: px + 18, 410; size: 12; color: dim; show: not b.asked }
-        text "{b.status}" { at: px, 648; size: 11.5; color: mint; width: W - px - 40; lines: 2 }
+        text "{b.status}" { at: px, 368 + max(276, 58 + ceil(max(b.models.count, 1) / bcols) * 48); size: 11.5; color: mint; width: W - px - 40; lines: 2 }
     }
 
     // ── what was saved, for a moment at the bottom ──
