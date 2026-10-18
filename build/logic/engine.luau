@@ -15,7 +15,7 @@ return function(shared)
     local DEFAULT_MODEL = "openai-codex/gpt-6-astra"
     local chosen_model = DEFAULT_MODEL
     local function read_conf(done)
-        run("sh", { "-c", 'cat "${XDG_CONFIG_HOME:-$HOME/.config}/pleamar/build.conf" 2>/dev/null; true' }, function(out)
+        run("sh", { "-c", 'cat "${PLEAMAR_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/pleamar}/build.conf" 2>/dev/null; true' }, function(out)
             for line in tostring(out or ""):gmatch("[^\n]+") do
                 local m = line:match("^%s*model%s+(%S+)")
                 if m then chosen_model = m end

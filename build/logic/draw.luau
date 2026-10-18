@@ -58,6 +58,7 @@ return function(shared)
     end
     on("toggle", function() if fact.on then turn_off() else turn_on() end end)
     on("leave", turn_off)
+    on("start", function() if not fact.on then turn_on() end end)
     --  Started by `pleamar-wm build`: on at once.
     if (sys.ask("env", "BUILD_ON") or "") == "1" then after(50, turn_on) end
 

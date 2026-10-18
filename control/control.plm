@@ -54,6 +54,7 @@ scene Control {
     event b_login ->               // `emit b_login(1)`: Claude
     event b_logout ->
     event b_pick ->
+    event b_start ->
 
     prop note = 0 ~calm
     follow note = if(toasted > 0, 1, 0)
@@ -386,7 +387,14 @@ scene Control {
     group {
         show: page == 3
         text "Build" { at: px, 44; size: 24; weight: 700; color: ink }
-        text "Draw what you want on the screen and ask for it: an AI builds it in pleamar, live. Super+B (pleamar-wm build), and again to finish." { at: px, 74; size: 12.5; color: dim; width: W - px - 40; lines: 2 }
+        text "Draw what you want on the screen and ask for it: an AI builds it in pleamar, live. Super+B (pleamar-wm build), and again to finish." { at: px, 74; size: 12.5; color: dim; width: W - px - 240; lines: 2 }
+        prop go.glow = 0 ~140ms
+        box { at: W - 130, 58; size: 180, 40; corner: 13; color: mint; opacity: 85% + 15% * go.glow }
+        text "Start building" { at: W - 130, 58; anchor: center; size: 13; weight: 800; color: coal }
+        zone box start_build { at: W - 130, 58; size: 180, 40; corner: 13; cursor: pointer; label: "Build mode now" }
+        on enter start_build { go.glow: 1 }
+        on leave start_build { go.glow: 0 }
+        on press start_build { emit b_start }
         body {
             color: card
             rim: 12%

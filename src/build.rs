@@ -69,7 +69,7 @@ pub fn run(args: &[String]) {
     // Running: told. `pleamar-wm build` toggles; `on` and `off` say which.
     let order = match args.first().map(String::as_str) {
         Some("off") => "emit leave",
-        Some("on") => "fact on true",
+        Some("on") => "emit start",
         _ => "emit toggle",
     };
     if let Ok(mut s) = std::os::unix::net::UnixStream::connect(socket()) {

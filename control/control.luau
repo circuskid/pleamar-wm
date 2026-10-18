@@ -73,7 +73,7 @@ local models = {}
 local chosen = ""
 
 local function conf(done)
-    run("sh", { "-c", 'cat "${XDG_CONFIG_HOME:-$HOME/.config}/pleamar/build.conf" 2>/dev/null; true' }, function(out)
+    run("sh", { "-c", 'cat "${PLEAMAR_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/pleamar}/build.conf" 2>/dev/null; true' }, function(out)
         for line in tostring(out or ""):gmatch("[^\n]+") do
             local m = line:match("^%s*model%s+(%S+)")
             if m then chosen = m end
@@ -163,8 +163,11 @@ on("b_pick", function(i)
     chosen = name
     show_models()
     text["b.chosen"] = name
-    run("sh", { "-c", 'd="${XDG_CONFIG_HOME:-$HOME/.config}/pleamar"; mkdir -p "$d" && printf "# pleamar-wm build: the model that builds (the control centre writes it)\\nmodel %s\\n" "$0" > "$d/build.conf"', name }, function(_, code)
+    run("sh", { "-c", 'd="${PLEAMAR_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/pleamar}"; mkdir -p "$d" && printf "# pleamar-wm build: the model that builds (the control centre writes it)\\nmodel %s\\n" "$0" > "$d/build.conf"', name }, function(_, code)
         text.toast = code == 0 and (name .. " builds from now on") or "Not saved"
         fact.toasted = fact.toasted + 1
     end)
+end)
+on("b_start", function()
+    run("pleamar-wm", { "build", "on" }, function() end)
 end)

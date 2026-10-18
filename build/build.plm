@@ -33,6 +33,7 @@ scene Build {
     fact on = false                    // build mode
     event toggle ->                    // `pleamar-wm build`, Super+B
     event leave ->                     // the bar's ✕
+    event start ->                     // `pleamar-wm build on`: on, if it was not
     //  What the pointer does on the desktop: nothing of ours (hand: the
     //  desktop as ever), draw freely (pen), or draw a box.
     fact tool: hand | pen | box = pen

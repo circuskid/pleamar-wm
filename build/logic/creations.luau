@@ -272,6 +272,7 @@ return function(shared)
             done(code == 0, (tostring(out or ""):gsub("%s+$", "")) .. lately())
         end, { errors = true })
     end
+    local when_stopped = nil   -- what waits for its scene to have gone
     local function start_scene()
         if scene_id or not current then return end
         local ok, id = pcall(spawn, "pleamar", { "--scene", path_of(current.id, "scene.plm"), "--no-hud" }, function(line)
@@ -280,11 +281,22 @@ return function(shared)
         end, function(_, code)
             log("build · its scene ended", code)
             scene_id = nil
+            local then_ = when_stopped
+            when_stopped = nil
+            if then_ then then_() end
         end, { errors = true })
         if ok then scene_id = id else log("build · its scene could not start: " .. tostring(id)) end
     end
-    local function stop_scene()
-        if scene_id then kill(scene_id, "term"); scene_id = nil end
+    --  `done` once it has gone: a scene started again before that would
+    --  find its own name still taken.
+    local function stop_scene(done)
+        if scene_id then
+            when_stopped = done
+            kill(scene_id, "term")
+            scene_id = nil
+        elseif done then
+            done()
+        end
     end
 
     -- ── where it was drawn ──
@@ -936,8 +948,9 @@ scene Creation {
             for _, k in ipairs(record.keys) do log("build · its key " .. k .. " stays") end
         end
         --  It goes on running, on its own now: this scene may close.
-        stop_scene()
-        run("sh", { "-c", 'setsid -f "$0" --scene "$1" --no-hud >/dev/null 2>&1', pleamar_path, path_of(record.id, "scene.plm") })
+        stop_scene(function()
+            run("sh", { "-c", 'setsid -f "$0" --scene "$1" --no-hud >/dev/null 2>&1', pleamar_path, path_of(record.id, "scene.plm") })
+        end)
         log("build · kept " .. record.id)
         finish()
     end)
@@ -962,8 +975,10 @@ scene Creation {
         stop_scene()
         if current.replaces and not current.kept then set_hidden(current.replaces, false) end
         --  One kept before and opened again: back to running on its own.
+        --  A moment later and on its own: build mode may be closing, and its
+        --  copy here must have gone first.
         if current.kept and not current.app then
-            run("sh", { "-c", 'setsid -f "$0" --scene "$1" --no-hud >/dev/null 2>&1', pleamar_path, path_of(current.id, "scene.plm") })
+            run("sh", { "-c", [[setsid -f sh -c 'sleep 1; exec "$0" --scene "$1" --no-hud' "$0" "$1" >/dev/null 2>&1]], pleamar_path, path_of(current.id, "scene.plm") })
         end
         finish()
     end
