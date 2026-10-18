@@ -87,11 +87,11 @@ scene Build {
 
         //  The canvas: it takes the desktop only while drawing is chosen.
         zone box canvas { from: 0, 0; size: W, H; cursor: crosshair; active: on and tool != hand and not building }
-        on press canvas while tool == pen { drawing = true; draw_screen = screen.index; pt = pointer.x * 8192 + pointer.y }
-        on drag canvas while tool == pen { pt = pointer.x * 8192 + pointer.y }
+        on press canvas while tool == pen { drawing = true; draw_screen = screen.index; pt = floor(local.x) * 8192 + floor(local.y) }
+        on drag canvas while tool == pen { pt = floor(local.x) * 8192 + floor(local.y) }
         on release canvas while tool == pen { drawing = false; emit stroke_end }
-        on press canvas while tool == box { drawing = true; draw_screen = screen.index; x0 = pointer.x; y0 = pointer.y; x1 = pointer.x; y1 = pointer.y }
-        on drag canvas while tool == box { x1 = pointer.x; y1 = pointer.y }
+        on press canvas while tool == box { drawing = true; draw_screen = screen.index; x0 = local.x; y0 = local.y; x1 = local.x; y1 = local.y }
+        on drag canvas while tool == box { x1 = local.x; y1 = local.y }
         on release canvas while tool == box { drawing = false; emit box_end }
         on key Escape while tool != hand { emit clear }
 
