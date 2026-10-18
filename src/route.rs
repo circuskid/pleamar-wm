@@ -128,6 +128,23 @@ impl Route {
             layers::tell(ToLayers::Button { code, down });
             return true;
         }
+        // Pressed while it was still held: its release was lost somewhere (a
+        // window gone, a workspace changed under it). Whoever had it is let
+        // go first, or a program went on taking every move for a drag —text
+        // selected, a window stuck to the mouse— until the session ended.
+        if down && self.scene_held.contains(&code) {
+            self.scene_held.retain(|c| *c != code);
+            if let 0x110..=0x116 = code {
+                let _ = self.to_render.send(ToRender::Button((code - 0x110) as u8, false));
+            }
+        }
+        if down && self.client_held.contains(&code) {
+            self.client_held.retain(|c| *c != code);
+            layers::tell(ToLayers::Button { code, down: false });
+            if self.client_held.is_empty() {
+                self.grab = None;
+            }
+        }
         if let Hit::Client(id, _) = self.hit {
             if down {
                 self.grab = Some(id);
