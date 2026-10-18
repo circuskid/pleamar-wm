@@ -4,6 +4,7 @@
 //! pleamar's own.
 
 mod agent_cli;
+mod build;
 mod remote;
 mod remote_rtc;
 mod remote_files;
@@ -115,6 +116,11 @@ fn main() {
         }
         return;
     }
+    // `pleamar-wm build` (Super+B): build mode, to build your desktop by asking.
+    if args.first().map(String::as_str) == Some("build") {
+        build::run(&args[1..]);
+        return;
+    }
     // `pleamar-wm control`: the control centre, a window to choose how each
     // monitor lays its windows out and to see what each key does.
     if args.first().map(String::as_str) == Some("control") {
@@ -126,6 +132,8 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        // Its Build page signs in with Build's own engine.
+        build::prepare();
         pleamar::run_with(vec!["--scene".to_owned(), format!("{dir}/control.plm"), "--no-hud".to_owned()]);
         return;
     }

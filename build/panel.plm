@@ -1,0 +1,284 @@
+// The Build scene, in pieces: the panel where you talk to the builder, and
+// the list of what you built. build.plm includes it.
+
+part Panel {
+    // ── the conversation ─────────────────────────────────────────
+    //  idle · starting · thinking · acting (something being done) · awaiting
+    //  (a card waits for you) · offline (no engine or no sign-in: why in status)
+    fact c.state: idle | starting | thinking | acting | awaiting | offline = idle
+    text c.status = ""
+    text c.model = ""
+    //  The thread: 1 you, 2 the builder, 3 something it did, 4 a card that
+    //  asks you, 5 a note. state: 0 going, 1 done, 2 failed, 3 allowed.
+    model rows max 30 { kind: number; text: text; detail: text; state: number }
+    fact c.live = -1
+    fact c.letters = 0
+    prop c.reveal = 0 ~150ms
+    follow c.reveal = c.letters
+    text c.input = ""
+    fact c.stuck = true                // following the end of the thread
+    event c_send ->
+    event c_stop ->
+    event c_allow ->
+    event c_deny ->
+    //  Pictures to show what you mean: dropped on where you write, a piece
+    //  of the screen, or pasted. They go with the next message.
+    model refs max 4 { pic: image 30, 30 }
+    event ref_shot ->
+    event ref_paste ->
+    event ref_remove ->
+    text c.hint = ""
+    event b_undo ->
+    event b_keep ->
+    event b_discard ->
+
+    // ── what you built ───────────────────────────────────────────
+    fact view: chat | list = chat
+    model list max 30 { name: text; what: text; kept: number; sure: number }
+    event l_open ->
+    event l_share ->
+    event l_remove ->
+    text l.shared = ""
+    fact l.on = false                  // l.shared says something
+    //  One someone shared, from outside: `pleamar --say build "text import_path
+    //  /path/x.build.tar.gz" "emit import"` (dropping it on the panel does the same).
+    text import_path = ""
+    event import ->
+
+    //  Where the panel is: the monitor you drew on, on the side away from
+    //  what you drew.
+    fact side: left | right = right
+    fact panel_screen = 0
+    prop pane = 0 ~280ms
+    follow pane = if(on and (building or view == list), 1, 0)
+    prop stir = 0 ~600ms
+    follow stir = if(c.state == thinking or c.state == acting or c.state == starting, 1, 0)
+
+    surface panel {
+        size: 460, 720
+        anchor: side
+        margin: 0, 24, 0, 24
+        level: top
+        screens: each max 4
+        keyboard: on_demand
+        open: pane > 0.01 and screen.index == panel_screen
+        let PW = 460
+        let PH = 720
+
+        component Row(r: record) {
+            measure said
+            measure hers
+            measure asked
+            size: 420, if(r.kind == 1, said.height + 18, if(r.kind == 2, hers.height + 6, if(r.kind == 4, asked.height + 74, 26)))
+            prop allow.glow = 0 ~140ms
+            prop deny.glow = 0 ~140ms
+            let arriving = r.index == c.live
+            //  1 · yours
+            group {
+                show: r.kind == 1
+                box { from: 420 - said.width - 26, 0; size: said.width + 26, said.height + 14; corner: 14; color: #1d2b27 }
+                text r.text { at: 420 - 13, 7; anchor: right top; width: 330; size: 13; color: ink; align: right; measure: said; selectable: true }
+            }
+            //  2 · the builder's, its letters rising as they come
+            text r.text { at: 2, 2; anchor: left top; width: 410; size: 13.5; line_height: 1.4; color: ink; measure: hers; show: r.kind == 2; markdown: true
+                          selectable: true
+                          letter_opacity: if(arriving, clamp((c.reveal - letter) / 12, 0, 1), 1)
+                          letter_move: 0, if(arriving, (1 - clamp((c.reveal - letter) / 12, 0, 1)) * 7, 0) }
+            //  3 · something it did
+            group {
+                show: r.kind == 3
+                ellipse { at: 10, 13; radius: 5.5; stroke: 1.4; color: mix(mix(mint, coral, r.state == 2), dim, r.state == 3) }
+                arc { at: 10, 13; radius: 5.5; span: 110deg; width: 1.6; rotate: t * 1440deg; color: mint; show: r.state == 0 }
+                ellipse { at: 10, 13; radius: 3; color: mint; show: r.state == 1 }
+                text r.text { at: 24, 13; anchor: left center; size: 11.5; color: #b9c2bf; width: 260; lines: 1 }
+                text r.detail { at: 418, 13; anchor: right center; size: 10.5; color: dim; width: 120; lines: 1; align: right }
+            }
+            //  4 · it asks you
+            group {
+                show: r.kind == 4
+                box { from: 0, 0; size: 420, asked.height + 66; corner: 14; color: #24211a }
+                box { from: 0, 0; size: 420, asked.height + 66; corner: 14; stroke: 1.4; color: amber; opacity: if(r.state == 0, 50% + 35% * sin(t * 720), 25%) }
+                text r.detail { at: 16, 16; anchor: left center; size: 9.5; weight: 700; color: amber; width: 380; lines: 1 }
+                text r.text { at: 16, 30; anchor: left top; width: 390; size: 12.5; color: ink; measure: asked; selectable: true }
+                group {
+                    show: r.state == 0
+                    box { from: 196, asked.height + 34; size: 104, 28; corner: 9; color: #2a2b2c; opacity: 80% + 20% * deny.glow }
+                    text "Not this" { at: 248, asked.height + 48; anchor: center; size: 11.5; weight: 600; color: ink }
+                    box { from: 306, asked.height + 34; size: 104, 28; corner: 9; color: amber; opacity: 85% + 15% * allow.glow }
+                    text "Allow" { at: 358, asked.height + 48; anchor: center; size: 11.5; weight: 700; color: coal }
+                    zone box deny_zone { from: 196, asked.height + 34; size: 104, 28; corner: 9; cursor: pointer }
+                    zone box allow_zone { from: 306, asked.height + 34; size: 104, 28; corner: 9; cursor: pointer }
+                }
+                text pick(r.state == 3, "Not allowed", "Allowed") { at: 404, asked.height + 48; anchor: right center; size: 11; color: dim; show: r.state != 0 }
+            }
+            //  5 · a note
+            text r.text { at: 2, 13; anchor: left center; size: 11.5; color: coral; width: 410; lines: 3; show: r.kind == 5; selectable: true }
+            on enter allow_zone { allow.glow: 1 }
+            on leave allow_zone { allow.glow: 0 }
+            on enter deny_zone { deny.glow: 1 }
+            on leave deny_zone { deny.glow: 0 }
+            on press allow_zone { emit c_allow(r.index) }
+            on press deny_zone { emit c_deny(r.index) }
+        }
+
+        component Chip(r: record) {
+            size: 32, 32
+            prop gone.glow = 0 ~140ms
+            image r.pic { at: 1, 1; size: 30, 30 }
+            box { at: 16, 16; size: 30, 30; corner: 7; stroke: 1; color: mint; opacity: 35% + 40% * gone.glow }
+            box { at: 16, 16; size: 30, 30; corner: 7; color: coal; opacity: 55% * gone.glow }
+            text "×" { at: 16, 15; anchor: center; size: 16; weight: 700; color: ink; opacity: gone.glow }
+            zone box chip { at: 16, 16; size: 32, 32; corner: 7; cursor: pointer }
+            on enter chip { gone.glow: 1 }
+            on leave chip { gone.glow: 0 }
+            on press chip { emit ref_remove(r.index) }
+        }
+
+        component Made(r: record) {
+            size: 420, 58
+            prop glow = 0 ~140ms
+            prop open.glow = 0 ~140ms
+            prop share.glow = 0 ~140ms
+            prop gone.glow = 0 ~140ms
+            box { from: 0, 0; size: 420, 58; corner: 14; color: mix(#18221f, #1f2c29, glow) }
+            ellipse { at: 18, 29; radius: 4; color: mix(dim, mint, r.kept) }
+            text r.name { at: 32, 21; anchor: left center; size: 13.5; weight: 700; color: ink; width: 200; lines: 1 }
+            text r.what { at: 32, 40; anchor: left center; size: 10.5; color: dim; width: 200; lines: 1 }
+            box { at: 270, 29; size: 58, 28; corner: 9; color: mix(#24302d, #2c4b44, open.glow) }
+            text "Open" { at: 270, 29; anchor: center; size: 11; weight: 600; color: ink }
+            box { at: 334, 29; size: 58, 28; corner: 9; color: mix(#24302d, #2f3d4f, share.glow) }
+            text "Share" { at: 334, 29; anchor: center; size: 11; weight: 600; color: ink }
+            box { at: 392, 29; size: 36, 28; corner: 9; color: mix(#24302d, #5a2f2a, max(gone.glow, r.sure)) }
+            text "×" { at: 392, 28; anchor: center; size: 15; weight: 700; color: mix(ink, coral, r.sure) }
+            zone box open_zone { at: 270, 29; size: 58, 28; corner: 9; cursor: pointer }
+            zone box share_zone { at: 334, 29; size: 58, 28; corner: 9; cursor: pointer }
+            zone box gone_zone { at: 392, 29; size: 36, 28; corner: 9; cursor: pointer; label: "Delete it (press twice)" }
+            on enter open_zone { open.glow: 1; glow: 1 }
+            on leave open_zone { open.glow: 0; glow: 0 }
+            on enter share_zone { share.glow: 1; glow: 1 }
+            on leave share_zone { share.glow: 0; glow: 0 }
+            on enter gone_zone { gone.glow: 1 }
+            on leave gone_zone { gone.glow: 0 }
+            on press open_zone { emit l_open(r.index) }
+            on press share_zone { emit l_share(r.index) }
+            on press gone_zone { emit l_remove(r.index) }
+        }
+
+        group {
+            opacity: pane
+            move: if(side == right, 1, -1) * (1 - pane) * 40, 0
+            box { from: 0, 0; size: PW, PH; corner: 22; color: coal; opacity: 96% }
+            box { from: 0, 0; size: PW, PH; corner: 22; stroke: 1.2; color: mint; opacity: 22% + 30% * stir }
+            //  ── the head ──
+            prop undo.glow = 0 ~140ms
+            prop throw.glow = 0 ~140ms
+            prop keep.glow = 0 ~140ms
+            prop back.glow = 0 ~140ms
+            group {
+                show: view == chat
+                text build.name { at: 20, 26; anchor: left center; size: 15; weight: 800; color: ink; width: 190; lines: 1 }
+                text c.model { at: 20, 46; anchor: left center; size: 10; color: dim; width: 190; lines: 1 }
+                box { at: 248, 34; size: 56, 26; corner: 8; color: #1f2a28; opacity: 80% + 20% * undo.glow }
+                text "Undo" { at: 248, 34; anchor: center; size: 11; weight: 600; color: ink }
+                box { at: 318, 34; size: 72, 26; corner: 8; color: #1f2a28; opacity: 80% + 20% * throw.glow }
+                text "Throw away" { at: 318, 34; anchor: center; size: 11; weight: 600; color: coral }
+                box { at: 400, 34; size: 80, 26; corner: 8; color: mint; opacity: 80% + 20% * keep.glow }
+                text "Keep it" { at: 400, 34; anchor: center; size: 11; weight: 800; color: coal }
+                zone box undo_btn { at: 248, 34; size: 56, 26; corner: 8; cursor: pointer; label: "Undo the last version" }
+                zone box throw_btn { at: 318, 34; size: 72, 26; corner: 8; cursor: pointer; label: "Throw it away" }
+                zone box keep_btn { at: 400, 34; size: 80, 26; corner: 8; cursor: pointer; label: "Keep it" }
+            }
+            group {
+                show: view == list
+                text "What you built" { at: 20, 30; anchor: left center; size: 15; weight: 800; color: ink }
+                box { at: 412, 30; size: 60, 26; corner: 8; color: #1f2a28; opacity: 80% + 20% * back.glow }
+                text "Close" { at: 412, 30; anchor: center; size: 11; weight: 600; color: ink }
+                zone box back_btn { at: 412, 30; size: 60, 26; corner: 8; cursor: pointer }
+            }
+            line { from: 20, 62; to: PW - 20, 62; width: 1; color: ink; opacity: 8% }
+
+            //  ── the thread ──
+            group {
+                show: view == chat
+                zone box thread_area { from: 20, 76; size: 420, 520; active: pane > 0.5 }
+                column thread ~quick {
+                    at: 20, 76
+                    view: 420, 520
+                    gap: 12
+                    for r in rows { Row(r) }
+                }
+                on scroll thread_area while wheel > 0 { c.stuck = false }
+                on change thread.scroll while thread.content - thread.scroll < 540 { c.stuck = true }
+                on change thread.content while c.stuck { thread.scroll: max(0, thread.content - 520) ~0ms }
+                on c_send { c.stuck = true; thread.scroll: max(0, thread.content - 520) ~0ms }
+                every 150ms while pane > 0.5 and c.stuck and abs(max(0, thread.content - 520) - thread.scroll) > 1 {
+                    thread.scroll: max(0, thread.content - 520) ~quick
+                }
+                text c.status { at: 22, 616; anchor: left center; size: 10.5; color: if(c.state == offline, coral, dim); width: 416; lines: 1 }
+                text c.hint { at: 22, 616; anchor: left center; size: 10.5; color: amber; width: 416; lines: 1 }
+                //  Where you write. It takes pictures too.
+                zone box drop_area { from: 20, 632; size: 420, 64; corner: 14; active: pane > 0.5 }
+                box { from: 20, 632; size: 420, 64; corner: 14; color: #141c1a }
+                box { from: 20, 632; size: 420, 64; corner: 14; stroke: 1 + drag.over; color: mint; opacity: 18% + 50% * drag.over }
+                row { at: 28, 640; gap: 4; for r in refs { Chip(r) } }
+                let refs_w = refs.count * 36
+                input c.input { at: 34 + refs_w, 654; width: 300 - refs_w; size: 14; color: ink; placeholder: "What should it be?" }
+                prop shot.glow = 0 ~140ms
+                prop paste.glow = 0 ~140ms
+                prop send.glow = 0 ~140ms
+                let busy = c.state == thinking or c.state == acting or c.state == awaiting or c.state == starting
+                ellipse { at: 356, 664; radius: 13; color: #24302d; opacity: 70% + 30% * paste.glow }
+                box { at: 356, 666; size: 10, 12; corner: 2; stroke: 1.4; color: ink }
+                box { at: 356, 659; size: 5, 3; corner: 1; color: ink }
+                ellipse { at: 386, 664; radius: 13; color: #24302d; opacity: 70% + 30% * shot.glow }
+                box { at: 386, 665; size: 14, 10; corner: 3; stroke: 1.4; color: ink }
+                ellipse { at: 386, 665; radius: 2.6; stroke: 1.3; color: ink }
+                ellipse { at: 418, 664; radius: 15; color: mix(mint, coral, busy); opacity: 80% + 20% * send.glow }
+                path { at: 412, 657; color: coal; stroke: 2; show: not busy; move 6, 13; line 6, 1 }
+                path { at: 412, 657; color: coal; stroke: 2; show: not busy; move 1, 6; line 6, 1; line 11, 6 }
+                box { at: 418, 664; size: 10, 10; corner: 2; color: coal; show: busy }
+                zone ellipse paste_btn { at: 356, 664; radius: 13; cursor: pointer; label: "Paste a picture" }
+                zone ellipse shot_btn { at: 386, 664; radius: 13; cursor: pointer; label: "A piece of the screen as a reference" }
+                zone ellipse send_btn { at: 418, 664; radius: 16; cursor: pointer }
+                on enter paste_btn { paste.glow: 1 }
+                on leave paste_btn { paste.glow: 0 }
+                on enter shot_btn { shot.glow: 1 }
+                on leave shot_btn { shot.glow: 0 }
+                on enter send_btn { send.glow: 1 }
+                on leave send_btn { send.glow: 0 }
+                on press paste_btn { emit ref_paste }
+                on press shot_btn { emit ref_shot }
+                on press send_btn while busy { emit c_stop }
+                on press send_btn while not busy { emit c_send }
+                on submit c.input { emit c_send }
+            }
+
+            //  ── what you built ──
+            group {
+                show: view == list
+                column made_list ~quick {
+                    at: 20, 80
+                    view: 420, 560
+                    gap: 6
+                    for r in list { Made(r) }
+                }
+                text "Nothing yet: draw something and press Done." { at: 22, 96; anchor: left center; size: 12; color: dim; show: list.count < 1 }
+                text "Drop a .build.tar.gz someone shared on this panel to open it." { at: 22, 662; anchor: left center; size: 10.5; color: dim; width: 416; lines: 1; show: not l.on }
+                text l.shared { at: 22, 662; anchor: left center; size: 10.5; color: mint; width: 416; lines: 2 }
+                zone box list_drop { from: 0, 0; size: PW, PH; active: pane > 0.5 and view == list }
+            }
+        }
+        on enter undo_btn { undo.glow: 1 }
+        on leave undo_btn { undo.glow: 0 }
+        on enter throw_btn { throw.glow: 1 }
+        on leave throw_btn { throw.glow: 0 }
+        on enter keep_btn { keep.glow: 1 }
+        on leave keep_btn { keep.glow: 0 }
+        on enter back_btn { back.glow: 1 }
+        on leave back_btn { back.glow: 0 }
+        on press undo_btn { emit b_undo }
+        on press throw_btn { emit b_discard }
+        on press keep_btn { emit b_keep }
+        on press back_btn { view = chat }
+    }
+}

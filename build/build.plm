@@ -1,0 +1,227 @@
+language 0.1
+// pleamar-wm's Build: you build your desktop by asking.
+//
+// `pleamar-wm build` (Super+B) turns build mode on, and again turns it off.
+// While it is on, every monitor says so —a breathing edge and a bar at the
+// top— and stays so until you leave. Draw the shape of what you want where
+// you want it (with the pen, freely, as many strokes as you like, or a box),
+// press Done, and tell it in the panel what it should be: an AI writes it in
+// pleamar and, since a scene is painted again every time it is saved, it
+// grows on your screen while it works. Keep it, throw it away, open it again.
+//
+// The engine (agent/: the Pi SDK, in its sandbox) only proposes; this
+// scene's logic decides by fixed rules, asks you on a card when it has to,
+// and does. Signing in and the model are chosen in pleamar-wm's control
+// centre (`pleamar-wm control` › Build).
+import "lang/es.plm"
+
+scene Build {
+    permissions {
+        services: "env", "files", "files.write", "files.remove", "clipboard"
+        run: "pleamar", "pleamar-wm", "grim", "magick", "sh", "curl", "xdg-user-dir", "xdg-open", "mkdir", "rm", "hyprctl"
+    }
+
+    let ink = #eef4f1
+    let dim = #8b9894
+    let mint = #7fe0c4
+    let amber = #e8c26a
+    let coral = #ef7a66
+    let coal = #0e1413
+    let glass = #142120
+
+    // ── the mode ─────────────────────────────────────────────────
+    fact on = false                    // build mode
+    event toggle ->                    // `pleamar-wm build`, Super+B
+    event leave ->                     // the bar's ✕
+    //  What the pointer does on the desktop: nothing of ours (hand: the
+    //  desktop as ever), draw freely (pen), or draw a box.
+    fact tool: hand | pen | box = pen
+    on change on while on { tool = pen }
+    prop shown = 0 ~420ms
+    follow shown = if(on, 1, 0)
+    prop t = 0
+    spin t by if(on, 0.25, 0)
+
+    // ── drawing ──────────────────────────────────────────────────
+    fact drawing = false               // the pen or the box is down
+    fact draw_screen = -1              // the monitor it is drawn on
+    fact pt = 0                        // where the pen is: x × 8192 + y
+    fact strokes = 0                   // how many, on draw_screen
+    fact x0 = 0
+    fact y0 = 0
+    fact x1 = 0
+    fact y1 = 0
+    fact boxed = false                 // a box drawn (instead of strokes)
+    model pts max 600 { x: number; y: number; px: number; py: number; join: number; s: number }
+    event stroke_end ->
+    event box_end ->
+    event clear ->
+    event done ->                      // what is drawn: build it
+    //  What you built before, where it is: a click opens it.
+    model olds max 16 { x: number; y: number; w: number; h: number; s: number; name: text }
+    event open_old ->                  // `emit open_old(2)`
+    //  Building one: its name, and the panel.
+    fact building = false
+    text build.name = ""
+    event finish ->                    // leave the creation as it is (kept or not)
+    event creations ->                 // the list of what you built
+
+    // ── on every monitor while it is on ──────────────────────────
+    surface mode {
+        size: full, full
+        anchor: top_left
+        level: overlay
+        screens: each max 4
+        keyboard: on_demand
+        captures: hidden
+        open: shown > 0.01
+        let W = mode.width
+        let H = mode.height
+        let here = draw_screen == screen.index
+
+        //  The edge: you are building, on every monitor, until you leave.
+        let edge = 0.55 + 0.25 * sin(t * 360)
+        box { from: 2, 2; size: W - 4, H - 4; corner: 14; stroke: 3; color: mint; opacity: edge * shown }
+        box { from: 6, 6; size: W - 12, H - 12; corner: 12; stroke: 1; color: mint; opacity: 25% * shown }
+
+        //  The canvas: it takes the desktop only while drawing is chosen.
+        zone box canvas { from: 0, 0; size: W, H; cursor: crosshair; active: on and tool != hand and not building }
+        on press canvas while tool == pen { drawing = true; draw_screen = screen.index; pt = pointer.x * 8192 + pointer.y }
+        on drag canvas while tool == pen { pt = pointer.x * 8192 + pointer.y }
+        on release canvas while tool == pen { drawing = false; emit stroke_end }
+        on press canvas while tool == box { drawing = true; draw_screen = screen.index; x0 = pointer.x; y0 = pointer.y; x1 = pointer.x; y1 = pointer.y }
+        on drag canvas while tool == box { x1 = pointer.x; y1 = pointer.y }
+        on release canvas while tool == box { drawing = false; emit box_end }
+        on key Escape while tool != hand { emit clear }
+
+        //  A dim while drawing, so the strokes read.
+        box { from: 0, 0; size: W, H; color: #04100d; opacity: if(tool != hand and not building, 22%, 0%) * shown }
+
+        //  What you built before: a dashed outline and its name.
+        component Old(r: record) {
+            prop lit = 0 ~140ms
+            group {
+                show: r.s == screen.index and tool != hand and not building
+                box { from: r.x, r.y; size: r.w, r.h; corner: 10; color: mint; opacity: 6% + 14% * lit }
+                box { from: r.x, r.y; size: r.w, r.h; corner: 10; stroke: 1.5; color: mint; opacity: 50% + 40% * lit }
+                box { from: r.x, r.y - 24; size: 170, 20; corner: 6; color: coal; opacity: 85% }
+                text r.name { at: r.x + 8, r.y - 14; anchor: left center; size: 11; weight: 700; color: mint; width: 156; lines: 1 }
+            }
+            zone box old_zone { from: r.x, r.y; size: r.w, r.h; corner: 10; cursor: pointer; active: r.s == screen.index and tool != hand and not building and not drawing; label: "Open it again" }
+            on enter old_zone { lit: 1 }
+            on leave old_zone { lit: 0 }
+            on press old_zone { emit open_old(r.index) }
+        }
+        for r in olds { Old(r) }
+
+        //  The strokes: a line from each point to the one before, and a dot.
+        component Pt(p: record) {
+            group {
+                show: p.s == screen.index
+                line { from: p.px, p.py; to: p.x, p.y; width: 5; color: mint; show: p.join > 0.5 }
+                ellipse { at: p.x, p.y; radius: 2.5; color: mint }
+            }
+        }
+        for p in pts { Pt(p) }
+
+        //  The box being drawn, and the one drawn.
+        let bl = min(x0, x1)
+        let bt = min(y0, y1)
+        let bw = abs(x1 - x0)
+        let bh = abs(y1 - y0)
+        group {
+            show: here and (tool == box and drawing or boxed) and bw > 4 and bh > 4
+            box { from: bl, bt; size: bw, bh; corner: 12; color: mint; opacity: 12% }
+            box { from: bl, bt; size: bw, bh; corner: 12; stroke: 2.5; color: mint; opacity: 85% }
+            text "{bw, 0} × {bh, 0}" { at: bl + bw / 2, bt + bh / 2; anchor: center; size: 12; color: ink; opacity: 80% }
+        }
+
+        //  What to do, the first time, in the middle.
+        group {
+            show: tool != hand and not building and strokes < 1 and not boxed and not drawing
+            text "Draw the shape of what you want, where you want it" { at: W / 2, H / 2 - 12; anchor: center; size: 20; weight: 600; color: ink; opacity: 85% * shown }
+            text "A bar along the top, a dock, a clock in a corner, a window… then Done" { at: W / 2, H / 2 + 18; anchor: center; size: 13; color: ink; opacity: 60% * shown }
+        }
+
+        //  ── the bar ──
+        let bw0 = 680
+        let bx = W / 2 - bw0 / 2
+        prop hand.glow = 0 ~120ms
+        prop pen.glow = 0 ~120ms
+        prop boxt.glow = 0 ~120ms
+        prop clear.glow = 0 ~120ms
+        prop done.glow = 0 ~120ms
+        prop list.glow = 0 ~120ms
+        prop out.glow = 0 ~120ms
+        group {
+            opacity: shown
+            move: 0, (1 - shown) * -20
+            box { from: bx, 12; size: bw0, 48; corner: 24; color: coal; opacity: 92% }
+            box { from: bx, 12; size: bw0, 48; corner: 24; stroke: 1.2; color: mint; opacity: 40% }
+            ellipse { at: bx + 26, 36; radius: 5; color: amber; opacity: 60% + 40% * sin(t * 720) }
+            text "BUILDING" { at: bx + 40, 36; anchor: left center; size: 11; weight: 800; color: amber }
+            text build.name { at: bx + 138, 36; anchor: left center; size: 12.5; weight: 700; color: ink; width: 170; lines: 1; show: building }
+            //  The tools (not while one is being built: its panel is where you talk).
+            group {
+                show: not building
+                box { at: bx + 172, 36; size: 34, 34; corner: 11; color: mix(#1d2a28, #2c4b44, max(hand.glow, tool == hand)) }
+                path { at: bx + 165, 28; color: ink; stroke: 1.6
+                       move 3, 16; line 3, 6; curve 7, 6 via 5, 2; line 7, 14; line 7, 3; curve 11, 3 via 9, -1; line 11, 14; line 11, 5; curve 15, 6 via 13, 2; line 15, 18; curve 9, 22 via 15, 22 }
+                box { at: bx + 214, 36; size: 34, 34; corner: 11; color: mix(#1d2a28, #2c4b44, max(pen.glow, tool == pen)) }
+                path { at: bx + 206, 28; color: ink; stroke: 1.8
+                       move 2, 16; line 12, 4; line 15, 7; line 5, 18; line 1, 19; close }
+                box { at: bx + 256, 36; size: 34, 34; corner: 11; color: mix(#1d2a28, #2c4b44, max(boxt.glow, tool == box)) }
+                box { at: bx + 256, 36; size: 17, 13; corner: 3; stroke: 1.8; color: ink }
+                box { at: bx + 298, 36; size: 34, 34; corner: 11; color: mix(#1d2a28, #4a2c2a, clear.glow); opacity: if(strokes > 0 or boxed, 100%, 40%) }
+                line { from: bx + 291, 29; to: bx + 305, 43; width: 1.8; color: ink }
+                line { from: bx + 305, 29; to: bx + 291, 43; width: 1.8; color: ink }
+                box { at: bx + 372, 36; size: 92, 34; corner: 12; color: mix(#24413a, mint, done.glow); opacity: if(strokes > 0 or boxed, 100%, 35%) }
+                text "Done" { at: bx + 372, 36; anchor: center; size: 12.5; weight: 800; color: mix(ink, coal, done.glow) }
+                zone box hand_btn { at: bx + 172, 36; size: 34, 34; corner: 11; cursor: pointer; label: "Use the desktop" }
+                zone box pen_btn { at: bx + 214, 36; size: 34, 34; corner: 11; cursor: pointer; label: "Draw freely" }
+                zone box boxt_btn { at: bx + 256, 36; size: 34, 34; corner: 11; cursor: pointer; label: "Draw a box" }
+                zone box clear_btn { at: bx + 298, 36; size: 34, 34; corner: 11; cursor: pointer; label: "Clear the drawing"; active: strokes > 0 or boxed }
+                zone box done_btn { at: bx + 372, 36; size: 92, 34; corner: 12; cursor: pointer; label: "Build what is drawn"; active: strokes > 0 or boxed }
+            }
+            //  Building one: back to the drawing when you are done with it.
+            group {
+                show: building
+                box { at: bx + 402, 36; size: 120, 34; corner: 12; color: mix(#1d2a28, #2c4b44, done.glow) }
+                text "Draw another" { at: bx + 402, 36; anchor: center; size: 12; weight: 700; color: ink }
+                zone box finish_btn { at: bx + 402, 36; size: 120, 34; corner: 12; cursor: pointer; label: "Leave this one and draw another" }
+            }
+            box { at: bx + 516, 36; size: 112, 34; corner: 12; color: mix(#1d2a28, #2c4b44, list.glow) }
+            text "My creations" { at: bx + 516, 36; anchor: center; size: 12; weight: 600; color: ink }
+            box { at: bx + 626, 36; size: 50, 34; corner: 12; color: mix(#1d2a28, #4a2c2a, out.glow) }
+            text "Exit" { at: bx + 626, 36; anchor: center; size: 12; weight: 700; color: ink }
+            zone box list_btn { at: bx + 516, 36; size: 112, 34; corner: 12; cursor: pointer; label: "What you built" }
+            zone box out_btn { at: bx + 626, 36; size: 50, 34; corner: 12; cursor: pointer; label: "Leave build mode (Super+B)" }
+        }
+        on enter hand_btn { hand.glow: 1 }
+        on leave hand_btn { hand.glow: 0 }
+        on enter pen_btn { pen.glow: 1 }
+        on leave pen_btn { pen.glow: 0 }
+        on enter boxt_btn { boxt.glow: 1 }
+        on leave boxt_btn { boxt.glow: 0 }
+        on enter clear_btn { clear.glow: 1 }
+        on leave clear_btn { clear.glow: 0 }
+        on enter done_btn { done.glow: 1 }
+        on leave done_btn { done.glow: 0 }
+        on enter finish_btn { done.glow: 1 }
+        on leave finish_btn { done.glow: 0 }
+        on enter list_btn { list.glow: 1 }
+        on leave list_btn { list.glow: 0 }
+        on enter out_btn { out.glow: 1 }
+        on leave out_btn { out.glow: 0 }
+        on press hand_btn { tool = hand }
+        on press pen_btn { tool = pen }
+        on press boxt_btn { tool = box }
+        on press clear_btn { emit clear }
+        on press done_btn { emit done }
+        on press finish_btn { emit finish }
+        on press list_btn { emit creations }
+        on press out_btn { emit leave }
+    }
+
+    include "panel.plm"
+}

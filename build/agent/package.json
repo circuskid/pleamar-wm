@@ -1,0 +1,14 @@
+{
+  "name": "pleamar-build-agent",
+  "private": true,
+  "version": "0.1.0",
+  "description": "pleamar-wm's Build: the Pi SDK in a sandbox, speaking JSON lines to the build scene.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.4"
+  }
+}

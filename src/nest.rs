@@ -926,6 +926,13 @@ fn run(max: usize, to_render: Sender<ToRender>, rx: Channel<ToNest>, ready: std:
                 .map(|l| l.strip_prefix("wm:").map_or(l, str::trim_start).to_owned())
                 .collect();
         }
+        // And what was kept in Build (pleamar-wm build): one command a line.
+        // Not in a screenless test session that names its own autostart.
+        if std::env::var_os("PLEAMAR_WM_AUTOSTART").is_none() {
+            if let Some(kept) = crate::config::user_dir().and_then(|d| std::fs::read_to_string(format!("{d}/creations.autostart")).ok()) {
+                state.autostart.extend(kept.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).map(str::to_owned));
+            }
+        }
     }
 
     // A frame callback nobody answers leaves a program stopped: if the render
@@ -2210,12 +2217,7 @@ impl State {
             let size = content_of(root, |c| c.size).unwrap_or((0, 0));
             let (mw, mh) = self.monitor_size(p.monitor);
             let (x, y) = panel_place(&c, (mw, mh), (size.0 as i32, size.1 as i32));
-            let pid = root.client().and_then(|cl| cl.get_credentials(&self.dh).ok()).map_or(0, |cr| cr.pid as u32);
-            // Who it is: its program, and for a pleamar program its scene.
-            let comm = std::fs::read_to_string(format!("/proc/{pid}/comm")).unwrap_or_default().trim().to_owned();
-            let cmdline = std::fs::read(format!("/proc/{pid}/cmdline")).unwrap_or_default();
-            let words: Vec<String> = cmdline.split(|b| *b == 0).map(|w| String::from_utf8_lossy(w).into_owned()).collect();
-            let scene = words.iter().position(|w| w == "--scene").and_then(|k| words.get(k + 1)).cloned().unwrap_or_default();
+            let (pid, comm, scene) = self.layer_identity(root);
             let level = match c.layer {
                 ShellLayer::Background => 0,
                 ShellLayer::Bottom => 1,
@@ -2226,6 +2228,32 @@ impl State {
             out.push_str(&format!("{sep} {} {pid} {} {x} {y} {} {} {level} {} {} {} {}", p.id, p.monitor, size.0, size.1, u8::from(p.hidden), hex(&p.namespace), hex(&comm), hex(&scene)));
         }
         out
+    }
+
+    /// Who draws a surface: its process, its program, and for a pleamar
+    /// program its scene (what `agent layers` says, and what
+    /// creations.hide names).
+    fn layer_identity(&self, root: &WlSurface) -> (u32, String, String) {
+        let pid = root.client().and_then(|cl| cl.get_credentials(&self.dh).ok()).map_or(0, |cr| cr.pid as u32);
+        let comm = std::fs::read_to_string(format!("/proc/{pid}/comm")).unwrap_or_default().trim().to_owned();
+        let cmdline = std::fs::read(format!("/proc/{pid}/cmdline")).unwrap_or_default();
+        let words: Vec<String> = cmdline.split(|b| *b == 0).map(|w| String::from_utf8_lossy(w).into_owned()).collect();
+        let scene = words.iter().position(|w| w == "--scene").and_then(|k| words.get(k + 1)).cloned().unwrap_or_default();
+        (pid, comm, scene)
+    }
+
+    /// What a creation of Build replaced stays hidden whenever it comes back
+    /// (~/.config/pleamar/creations.hide: program, scene and name, a tab
+    /// between them, one a line).
+    fn replaced_by_a_creation(&self, root: &WlSurface, namespace: &str) -> bool {
+        let Some(file) = crate::config::user_dir().map(|d| format!("{d}/creations.hide")) else { return false };
+        let Ok(text) = std::fs::read_to_string(file) else { return false };
+        let (_, comm, scene) = self.layer_identity(root);
+        text.lines().map(|l| l.split('#').next().unwrap_or("").trim_end()).filter(|l| !l.is_empty()).any(|l| {
+            let f: Vec<&str> = l.split('\t').collect();
+            let (p, sc, ns) = (f.first().copied().unwrap_or(""), f.get(1).copied().unwrap_or(""), f.get(2).copied().unwrap_or(""));
+            p == comm && (sc.is_empty() || sc == scene) && (ns.is_empty() || ns == namespace)
+        })
     }
 
     /// One of them off the screen, or back: its program goes on as ever.
@@ -4209,7 +4237,11 @@ impl WlrLayerShellHandler for State {
         self.next_number += 1;
         self.outputs[monitor].enter(surface.wl_surface());
         println!("windows · '{namespace}' on {}", self.outputs[monitor].name());
-        self.panels.push(Panel { shell: Shell::Layer(surface), id: self.next_number, monitor, namespace, hidden: false, configured: None, sent: Vec::new() });
+        let hidden = self.replaced_by_a_creation(surface.wl_surface(), &namespace);
+        if hidden {
+            println!("windows · '{namespace}' stays hidden: a creation of Build took its place (creations.hide)");
+        }
+        self.panels.push(Panel { shell: Shell::Layer(surface), id: self.next_number, monitor, namespace, hidden, configured: None, sent: Vec::new() });
     }
 
     fn layer_destroyed(&mut self, surface: LayerSurface) {
