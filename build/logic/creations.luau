@@ -986,16 +986,12 @@ scene Creation {
         lines_set(HIDE, id)
         unbind_keys(id)
     end
-    on("b_keep", function()
-        if not current then return end
-        local record = current
-        record.kept = true
-        if record.app then
-            --  An app: in the finder and the dock from now on; its window
-            --  stays open, and it opens from there next time.
-            install_app(record)
-            log("build · kept the app " .. record.id)
-            finish()
+    --  With the session from now on, or not: its line to start it and the
+    --  one that keeps what it replaced hidden.
+    local function with_session(record, yes)
+        if not yes then
+            lines_set(AUTOSTART, record.id)
+            lines_set(HIDE, record.id)
             return
         end
         lines_set(AUTOSTART, record.id, string.format("%s --scene %s --no-hud  # creation %s", pleamar_path, path_of(record.id, "scene.plm"), record.id))
@@ -1005,6 +1001,21 @@ scene Creation {
             hide = string.format("%s\t%s\t%s  # creation %s", prog or "", scene or "", tostring(record.replaces.ns or ""), record.id)
         end
         lines_set(HIDE, record.id, hide)
+    end
+    on("b_keep", function()
+        if not current then return end
+        local record = current
+        record.kept = true
+        record.off = nil
+        if record.app then
+            --  An app: in the finder and the dock from now on; its window
+            --  stays open, and it opens from there next time.
+            install_app(record)
+            log("build · kept the app " .. record.id)
+            finish()
+            return
+        end
+        with_session(record, true)
         if record.keys then
             for _, k in ipairs(record.keys) do log("build · its key " .. k .. " stays") end
         end
@@ -1038,7 +1049,7 @@ scene Creation {
         --  One kept before and opened again: back to running on its own.
         --  A moment later and on its own: build mode may be closing, and its
         --  copy here must have gone first.
-        if current.kept and not current.app then
+        if current.kept and not current.app and not current.off then
             run("sh", { "-c", [[setsid -f sh -c 'sleep 1; exec "$0" --scene "$1" --no-hud' "$0" "$1" >/dev/null 2>&1]], pleamar_path, path_of(current.id, "scene.plm") })
         end
         finish()
@@ -1123,8 +1134,10 @@ scene Creation {
             if not item.thrown then
                 local record = load(item.id) or {}
                 local what = record.app and tr("An app") or tr(KIND_WORDS[item.kind] or "A widget")
-                what = what .. " · " .. (record.kept and tr("kept") or tr("not kept"))
-                out[#out + 1] = { name = tostring(record.name or item.name or item.id), what = what, kept = record.kept and 1 or 0, sure = item.id == sure_id and 1 or 0 }
+                local can = record.kept and not record.app
+                what = what .. " · " .. (not record.kept and tr("not kept") or record.off and tr("off") or tr("kept"))
+                out[#out + 1] = { name = tostring(record.name or item.name or item.id), what = what, kept = record.kept and 1 or 0, sure = item.id == sure_id and 1 or 0,
+                                  can = can and 1 or 0, on = (can and not record.off) and 1 or 0 }
                 shelf[#shelf + 1] = item.id
             end
         end
@@ -1142,6 +1155,27 @@ scene Creation {
         if not record or current then return end
         stop_kept(id)
         open(record)
+    end)
+    --  Off without deleting it: it stops, does not start with the session,
+    --  and what it replaced comes back; on, all of it again.
+    on("l_toggle", function(i)
+        local id = shelf[(tonumber(i) or -1) + 1]
+        local record = id and load(id)
+        if not record or not record.kept or record.app or (current and current.id == id) then return end
+        record.off = not record.off or nil
+        if record.off then
+            stop_kept(id)
+            with_session(record, false)
+            if record.replaces then set_hidden(record.replaces, false) end
+            log("build · off " .. id)
+        else
+            with_session(record, true)
+            if record.replaces then set_hidden(record.replaces, true) end
+            run("sh", { "-c", 'setsid -f "$0" --scene "$1" --no-hud >/dev/null 2>&1', pleamar_path, path_of(id, "scene.plm") })
+            log("build · on " .. id)
+        end
+        pcall(sys.call, "files.write", where(id) .. "/creation.json", record)
+        show_list()
     end)
     on("l_remove", function(i)
         local id = shelf[(tonumber(i) or -1) + 1]

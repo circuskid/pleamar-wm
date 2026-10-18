@@ -2,6 +2,8 @@
 // `locale` (the system's language) chooses.
 library BuildSpanish {
     translations es {
+        "On or off" = "Encendida o apagada"
+        "off" = "apagada"
         "Drag over what you want as a reference · Esc to cancel" = "Arrastra sobre lo que quieras como referencia · Esc para cancelar"
         "The panel to the other side" = "El panel al otro lado"
         "%d pictures" = "%d imágenes"

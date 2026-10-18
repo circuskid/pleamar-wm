@@ -34,9 +34,10 @@ part Panel {
 
     // ── what you built ───────────────────────────────────────────
     fact view: chat | list = chat
-    model list max 30 { name: text; what: text; kept: number; sure: number }
+    model list max 30 { name: text; what: text; kept: number; sure: number; can: number; on: number }
     event l_open ->
     event l_share ->
+    event l_toggle ->                  // one kept, off or on again
     event l_remove ->
     text l.shared = ""
     fact l.on = false                  // l.shared says something
@@ -142,10 +143,20 @@ part Panel {
             prop open.glow = 0 ~140ms
             prop share.glow = 0 ~140ms
             prop gone.glow = 0 ~140ms
+            prop sw = 0 ~calm
+            follow sw = r.on
             box { from: 0, 0; size: 420, 58; corner: 14; color: mix(#18221f, #1f2c29, glow) }
-            ellipse { at: 18, 29; radius: 4; color: mix(dim, mint, r.kept) }
-            text r.name { at: 32, 21; anchor: left center; size: 13.5; weight: 700; color: ink; width: 200; lines: 1 }
-            text r.what { at: 32, 40; anchor: left center; size: 10.5; color: dim; width: 200; lines: 1 }
+            //  On or off (one kept): a switch; else the dot of kept or not.
+            ellipse { at: 18, 29; radius: 4; color: mix(dim, mint, r.kept); show: r.can < 0.5 }
+            group {
+                show: r.can > 0.5
+                box { at: 26, 29; size: 34, 20; corner: 10; color: mix(#2a302e, #2f6b5a, sw) }
+                ellipse { at: 18 + 16 * sw, 29; radius: 7; color: mix(dim, ink, sw) }
+                zone box switch_zone { at: 26, 29; size: 38, 24; corner: 10; cursor: pointer; label: "On or off" }
+                on press switch_zone { emit l_toggle(r.index) }
+            }
+            text r.name { at: 50, 21; anchor: left center; size: 13.5; weight: 700; color: mix(dim, ink, max(sw, 1 - r.can)); width: 185; lines: 1 }
+            text r.what { at: 50, 40; anchor: left center; size: 10.5; color: dim; width: 185; lines: 1 }
             box { at: 270, 29; size: 58, 28; corner: 9; color: mix(#24302d, #2c4b44, open.glow) }
             text "Open" { at: 270, 29; anchor: center; size: 11; weight: 600; color: ink }
             box { at: 334, 29; size: 58, 28; corner: 9; color: mix(#24302d, #2f3d4f, share.glow) }
