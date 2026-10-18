@@ -890,28 +890,30 @@ scene Creation {
     end
     on("drop:drop_area", dropped)
     on("drop:list_drop", dropped)
+    --  A piece of the screen: build mode lets you drag over it (draw.luau),
+    --  and hands the picture here.
     on("ref_shot", function()
-        if not current then return end
-        after(150, function()
-            run("slurp", {}, function(sel, code)
-                local x, y, w, h = (sel or ""):match("(%-?%d+),(%-?%d+) (%d+)x(%d+)")
-                if code ~= 0 or not x then return end
-                local tmp = STATE .. "/refs/shot-" .. os.time() .. ".png"
-                run("mkdir", { "-p", STATE .. "/refs" }, function()
-                    run("grim", { "-g", string.format("%s,%s %sx%s", x, y, w, h), tmp }, function(_, c2)
-                        if c2 == 0 then take_picture(tmp, function() run("rm", { "-f", tmp }) end) end
-                    end)
-                end)
-            end)
-        end)
+        if current then fact.shooting = true end
     end)
-    on("ref_paste", function()
+    function api.add_picture(path)
+        take_picture(path, function() run("rm", { "-f", path }) end)
+    end
+    --  A picture copied (a screenshot, an image from the browser): the
+    --  paste button, or Ctrl+V in the panel —which, quiet, leaves text to
+    --  the field it is typed in—.
+    local function paste_picture(quiet)
+        if not current then return end
         local tmp = STATE .. "/refs/paste-" .. os.time() .. ".png"
         run("mkdir", { "-p", STATE .. "/refs" }, function()
-            run("sh", { "-c", 'wl-paste --type image/png > "$0" 2>/dev/null || wl-paste --type image/jpeg > "$0" 2>/dev/null', tmp }, function(_, code)
-                if code == 0 then take_picture(tmp, function() run("rm", { "-f", tmp }) end) else hint(tr("Nothing copied is a picture")) end
+            run("sh", { "-c", 'wl-paste --list-types 2>/dev/null | grep -q "^image/" || exit 3; t=$(wl-paste --list-types | grep -m1 "^image/png" || wl-paste --list-types | grep -m1 "^image/"); wl-paste --type "$t" > "$0" 2>/dev/null && [ -s "$0" ]', tmp }, function(_, code)
+                if code == 0 then take_picture(tmp, function() run("rm", { "-f", tmp }) end)
+                elseif not quiet then hint(tr("Nothing copied is a picture")) end
             end)
         end)
+    end
+    on("ref_paste", function() paste_picture(false) end)
+    on("key", function(name)
+        if name == "Ctrl+v" and fact.building then paste_picture(true) end
     end)
     on("ref_remove", function(i)
         local k = (tonumber(i) or -1) + 1

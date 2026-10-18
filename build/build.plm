@@ -67,6 +67,15 @@ scene Build {
     event box_end ->
     event clear ->
     event done ->                      // what is drawn: build it
+    // A piece of the screen as a reference: dragged over, the screen is
+    // the canvas for that one drag, even while building.
+    fact shooting = false
+    fact shot_screen = -1
+    fact sx0 = 0
+    fact sy0 = 0
+    fact sx1 = 0
+    fact sy1 = 0
+    event shot_end ->
     //  What you built before, where it is: a click opens it.
     model olds max 16 { x: number; y: number; w: number; h: number; s: number; name: text }
     event open_old ->                  // `emit open_old(2)`
@@ -100,14 +109,36 @@ scene Build {
 
         //  The canvas: it takes the desktop only while drawing is chosen.
         //  Not while What you built is open: its panel is what you use then.
-        zone box canvas { from: 0, 0; size: W, H; cursor: crosshair; active: on and tool != hand and not building and view != list }
-        on press canvas while tool == pen { drawing = true; draw_screen = screen.index; pt = floor(local.x) * 8192 + floor(local.y) }
-        on drag canvas while tool == pen { pt = floor(local.x) * 8192 + floor(local.y) }
-        on release canvas while tool == pen { drawing = false; emit stroke_end }
-        on press canvas while tool == box { drawing = true; draw_screen = screen.index; x0 = local.x; y0 = local.y; x1 = local.x; y1 = local.y }
-        on drag canvas while tool == box { x1 = local.x; y1 = local.y }
-        on release canvas while tool == box { drawing = false; emit box_end }
-        on key Escape while tool != hand { emit clear }
+        zone box canvas { from: 0, 0; size: W, H; cursor: crosshair; active: on and view != list and (shooting or (tool != hand and not building)) }
+        on press canvas while shooting { shot_screen = screen.index; sx0 = local.x; sy0 = local.y; sx1 = local.x; sy1 = local.y }
+        on drag canvas while shooting { sx1 = local.x; sy1 = local.y }
+        on release canvas while shooting { emit shot_end }
+        on key Escape while shooting { shooting = false }
+        on press canvas while tool == pen and not shooting { drawing = true; draw_screen = screen.index; pt = floor(local.x) * 8192 + floor(local.y) }
+        on drag canvas while tool == pen and not shooting { pt = floor(local.x) * 8192 + floor(local.y) }
+        on release canvas while tool == pen and not shooting { drawing = false; emit stroke_end }
+        on press canvas while tool == box and not shooting { drawing = true; draw_screen = screen.index; x0 = local.x; y0 = local.y; x1 = local.x; y1 = local.y }
+        on drag canvas while tool == box and not shooting { x1 = local.x; y1 = local.y }
+        on release canvas while tool == box and not shooting { drawing = false; emit box_end }
+        on key Escape while tool != hand and not shooting { emit clear }
+
+        //  Taking a piece of the screen: what is dragged over, clear; the
+        //  rest a little dimmed; and what to do, at the top.
+        group {
+            show: shooting
+            let qx = min(sx0, sx1)
+            let qy = min(sy0, sy1)
+            let qw = abs(sx1 - sx0)
+            let qh = abs(sy1 - sy0)
+            box { from: 0, 0; size: W, H; color: #04100d; opacity: 30% }
+            group {
+                show: shot_screen == screen.index and qw > 2 and qh > 2
+                box { from: qx, qy; size: qw, qh; corner: 4; color: mint; opacity: 8% }
+                box { from: qx, qy; size: qw, qh; corner: 4; stroke: 2; color: mint; opacity: 90% }
+            }
+            box { at: W / 2, 96; size: 470, 34; corner: 17; color: coal; opacity: 92% }
+            text "Drag over what you want as a reference · Esc to cancel" { at: W / 2, 96; anchor: center; size: 12.5; weight: 650; color: mint }
+        }
 
         //  A dim while drawing, so the strokes read.
         box { from: 0, 0; size: W, H; color: #04100d; opacity: if(tool != hand and not building, 22%, 0%) * shown }

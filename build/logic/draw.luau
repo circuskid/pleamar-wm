@@ -196,6 +196,30 @@ return function(shared)
         end)
     end)
 
+    -- ── a piece of the screen, as a reference ──
+    on("shot_end", function()
+        fact.shooting = false
+        local x0, y0 = math.floor(math.min(fact.sx0, fact.sx1)), math.floor(math.min(fact.sy0, fact.sy1))
+        local w, h = math.floor(math.abs(fact.sx1 - fact.sx0)), math.floor(math.abs(fact.sy1 - fact.sy0))
+        if w < 8 or h < 8 then return end
+        local s = fact.shot_screen
+        monitors(function(list)
+            local m = nil
+            for _, l in ipairs(list) do if l.index == s then m = l end end
+            m = m or list[s + 1] or list[1]
+            if not m then return end
+            local path = STATE .. "/refs/shot-" .. os.time() .. ".png"
+            --  A moment for the dim to go before the picture is taken.
+            after(250, function()
+                run("mkdir", { "-p", STATE .. "/refs" }, function()
+                    run("grim", { "-g", string.format("%d,%d %dx%d", m.x + x0, m.y + y0, w, h), path }, function(_, code)
+                        if code == 0 then creations.add_picture(path) end
+                    end, { errors = true })
+                end)
+            end)
+        end)
+    end)
+
     -- ── what you built, on the screen ──
     on("open_old", function(i)
         creations.open_id(old_ids[(tonumber(i) or -1) + 1])
