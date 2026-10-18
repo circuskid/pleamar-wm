@@ -29,6 +29,8 @@ return function(shared)
     local old_ids = {}
     local function show_olds()
         creations.olds(function(list)
+            --  Asked while leaving: nothing to outline any more.
+            if not fact.on then return end
             local out = {}
             old_ids = {}
             for _, item in ipairs(list) do
@@ -52,6 +54,7 @@ return function(shared)
         if fact.building then creations.leave() end
         clear()
         fact.sketch = false
+        model.olds = {}
         fact.view = "chat"
         fact.on = false
         --  Nothing left to do here: the scene goes (what you kept runs on its own).

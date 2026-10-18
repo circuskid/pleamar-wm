@@ -188,6 +188,9 @@ part Panel {
                 zone box throw_btn { at: 318, 34; size: 72, 26; corner: 8; cursor: pointer; label: "Throw it away" }
                 zone box keep_btn { at: 400, 34; size: 80, 26; corner: 8; cursor: pointer; label: "Keep it" }
             }
+            //  Dropping a shared creation anywhere on the list: under everything,
+            //  so its buttons and Close take their presses.
+            zone box list_drop { from: 0, 0; size: PW, PH; active: pane > 0.5 and view == list }
             group {
                 show: view == list
                 text "What you built" { at: 20, 30; anchor: left center; size: 15; weight: 800; color: ink }
@@ -265,7 +268,6 @@ part Panel {
                 text "Nothing yet: draw something and press Done." { at: 22, 96; anchor: left center; size: 12; color: dim; show: list.count < 1 }
                 text "Drop a .build.tar.gz someone shared on this panel to open it." { at: 22, 662; anchor: left center; size: 10.5; color: dim; width: 416; lines: 1; show: not l.on }
                 text l.shared { at: 22, 662; anchor: left center; size: 10.5; color: mint; width: 416; lines: 2 }
-                zone box list_drop { from: 0, 0; size: PW, PH; active: pane > 0.5 and view == list }
             }
         }
         on enter undo_btn { undo.glow: 1 }
