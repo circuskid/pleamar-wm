@@ -56,8 +56,8 @@ export const TOOLS = [
     {
         name: "creation_poke",
         looks: true,
-        description: "Uses the creation as the user would, to try it: «press ZONE» (a zone's name), «fact NAME VALUE», «emit EVENT», «get NAME». Answers with what changed (its facts and events). Look after it to see the result; then put it back as it was if the user should not find it changed.",
-        parameters: Type.Object({ order: Type.String({ maxLength: 200, description: "press toggle · fact open true · emit refresh · get open" }) }),
+        description: "Uses the creation with your own cursor, as the user would: the user sees the agent's cursor glide there and do it. «describe» first gives its zones (what can be pressed or dragged, by name, with where they are). Then «press ZONE» (add right, middle, or 2 for a double press), «hold ZONE», «drag ZONE DX DY» (pixels from the zone's middle: moving a widget by its handle, a resize corner, a slider), «wheel ZONE N» (notches, positive up), «type ZONE TEXT», «key COMBO» (escape, ctrl+s…), or straight to its state: «fact NAME VALUE», «emit EVENT», «get NAME». Answers with what changed (its facts and events). Try every gesture you made before saying it works (drag what can be dragged, resize what can be resized, press its buttons), look after it to see the result, and put it back as it was if the user should not find it changed.",
+        parameters: Type.Object({ order: Type.String({ maxLength: 200, description: "describe · press toggle · drag handle 120 0 · drag corner 40 30 · wheel list -3 · type query hello · key escape · get open" }) }),
     },
     {
         name: "system_run",

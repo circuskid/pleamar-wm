@@ -671,10 +671,22 @@ scene Creation {
         if tool == "system_run" or tool == "system_read" then
             system_do(tool, args, done)
         elseif tool == "creation_poke" then
-            --  What --say understands, and nothing else: it is the creation's own socket.
-            local order = tostring(args.order or "")
-            if not (order:match("^press [%w_]+$") or order:match("^fact [%w_.]+ %S+$") or order:match("^emit [%w_]+") or order:match("^get [%w_.]+$")) then
-                done(false, "Not an order it understands: press ZONE, fact NAME VALUE, emit EVENT, get NAME.")
+            --  What --say understands, and nothing else: it is the creation's
+            --  own socket. press, drag, hold, wheel, type and key go through
+            --  its hand as a person's would, and in pleamar-wm the agent's
+            --  cursor glides there first: the user sees it being tried.
+            local order = tostring(args.order or ""):gsub("[\r\n]", " ")
+            local zone = "[%w_.#]+"
+            local fine = order == "describe"
+                or order:match("^press " .. zone .. "$") or order:match("^press " .. zone .. " [%w ]+$")
+                or order:match("^hold " .. zone .. "$")
+                or order:match("^drag " .. zone .. " %-?[%d.]+ %-?[%d.]+$")
+                or order:match("^wheel " .. zone .. " %-?[%d.]+$")
+                or order:match("^type " .. zone .. " .+$")
+                or order:match("^key [%w+]+$")
+                or order:match("^fact [%w_.]+ %S+$") or order:match("^emit [%w_]+") or order:match("^get [%w_.]+$")
+            if not fine then
+                done(false, "Not an order it understands: describe · press ZONE [right|middle] [2] · hold ZONE · drag ZONE DX DY · wheel ZONE N · type ZONE TEXT · key COMBO · fact NAME VALUE · emit EVENT · get NAME.")
                 return
             end
             run("pleamar", { "--say", id, order }, function(out, code)
