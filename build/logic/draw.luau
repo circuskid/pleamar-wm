@@ -49,6 +49,7 @@ return function(shared)
     local function turn_off()
         if fact.building then creations.leave() end
         clear()
+        fact.sketch = false
         fact.view = "chat"
         fact.on = false
         --  Nothing left to do here: the scene goes (what you kept runs on its own).
@@ -179,7 +180,8 @@ return function(shared)
                         local pictures = {}
                         if c1 == 0 then pictures[#pictures + 1] = sketch end
                         if c2 == 0 then pictures[#pictures + 1] = under end
-                        clear()
+                        --  The drawing stays, as its sketch, until it is built.
+                        fact.sketch = true
                         creations.from_drawing(m, x0, y0, w, h, pictures)
                     end, { errors = true })
                 end, { errors = true })
@@ -194,6 +196,8 @@ return function(shared)
     --  A creation left (kept, thrown or as it is): the pen again, and what you
     --  built drawn on the screen.
     creations.finished = function()
+        clear()
+        fact.sketch = false
         fact.tool = "pen"
         show_olds()
     end

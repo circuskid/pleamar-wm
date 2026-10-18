@@ -354,21 +354,15 @@ return function(shared)
         if anchor:find("top") then y = m[1] elseif anchor:find("bottom") then y = r.mh - h - m[3] end
         return x, y, w, h
     end
+    --  Nothing of its own to show yet: build mode shows the sketch there.
     local function placeholder(name, surface, w, h)
         return string.format([[language 0.1
 // Being built: «%s». It is written again as it grows.
 scene Creation {
     %s
-    let w = %d
-    let h = %d
-    prop t = 0
-    spin t by 0.35
-    box { from: 0, 0; size: w, h; corner: min(h, w) * 0.3; color: #0c1c19; opacity: 75%% }
-    box { from: 0, 0; size: w, h; corner: min(h, w) * 0.3; stroke: 2; color: #7fe0c4; opacity: 35%% + 25%% * sin(t * 360) }
-    box { from: 0, 0; size: w * (0.5 + 0.5 * sin(t * 180)), h; corner: min(h, w) * 0.3; color: #7fe0c4; opacity: 10%% }
-    text "%s" { at: w / 2, h / 2; anchor: center; size: 13; color: #cfeee4; opacity: 80%% }
+    box { from: 0, 0; size: %d, %d; opacity: 0%% }
 }
-]], name, surface, w, h, tr("Building it…"))
+]], name, surface, w, h)
     end
 
     -- ── apps: a window of its own, in the finder and the dock ──
@@ -514,6 +508,12 @@ scene Creation {
         fact.view = "chat"
         text["build.name"] = record.name
         place_panel(record.region)
+        --  Where it goes, for the corners and the light over it; a new one is
+        --  still its sketch until its first version is on the screen.
+        local r = record.region or {}
+        fact["reg.x"], fact["reg.y"], fact["reg.w"], fact["reg.h"] = r.x or 0, r.y or 0, r.w or 0, r.h or 0
+        fact["reg.s"] = r.monitor_index or 0
+        fact.made = #(record.versions or {}) > 0 or not fact.sketch
         if chat then chat.begin(record.history or {}, record.rows or {}) end
         --  One from someone else does not run until you allow what it asks for.
         if record.pending then review(record) else start_scene() end
@@ -710,6 +710,8 @@ scene Creation {
                 --  said is in the answer.
                 after(1500, function()
                     check(function(ok, words)
+                        --  Its first version on the screen: the sketch gives way.
+                        if ok and file == "scene.plm" then fact.made = true end
                         done(true, (ok and "Written; it compiles, and it is on the screen now: " or "Written, but it does NOT compile (the screen keeps the last good version): ") .. words)
                     end)
                 end)
@@ -916,6 +918,8 @@ scene Creation {
         record_save()
         current = nil
         fact.building = false
+        fact.made = false
+        fact["reg.w"] = 0
         text["build.name"] = ""
         --  Told by hand: a logic's own change to a fact reaches no `fact:` handler.
         if api.finished then api.finished() end

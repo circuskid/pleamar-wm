@@ -53,6 +53,15 @@ scene Build {
     fact x1 = 0
     fact y1 = 0
     fact boxed = false                 // a box drawn (instead of strokes)
+    // While it is built: the drawing stays as its sketch, until the first
+    // version is on the screen; then the place, while the builder works.
+    fact sketch = false                // what was drawn stays, being built
+    fact made = false                  // its first version is on the screen
+    fact reg.x = 0                     // where it goes, on reg.s
+    fact reg.y = 0
+    fact reg.w = 0
+    fact reg.h = 0
+    fact reg.s = -1
     model pts max 600 { x: number; y: number; px: number; py: number; join: number; s: number }
     event stroke_end ->
     event box_end ->
@@ -79,6 +88,10 @@ scene Build {
         let W = mode.width
         let H = mode.height
         let here = draw_screen == screen.index
+        //  The drawing shows while drawing, and as the sketch until the
+        //  creation is on the screen: then it fades into it.
+        prop sk = 1 ~calm
+        follow sk = if(not building or (sketch and not made), 1, 0)
 
         //  The edge: you are building, on every monitor, until you leave.
         let edge = 0.55 + 0.25 * sin(t * 360)
@@ -116,11 +129,14 @@ scene Build {
         for r in olds { Old(r) }
 
         //  The strokes: a line from each point to the one before, and a dot.
+        //  Being built, a light runs along them, as if traced again.
         component Pt(p: record) {
+            let wave = 0.5 + 0.5 * sin(t * 300 - p.index * 9)
             group {
-                show: p.s == screen.index
+                show: p.s == screen.index and sk > 0.01
+                opacity: sk * if(sketch, 55% + 45% * wave, 100%)
                 line { from: p.px, p.py; to: p.x, p.y; width: 5; color: mint; show: p.join > 0.5 }
-                ellipse { at: p.x, p.y; radius: 2.5; color: mint }
+                ellipse { at: p.x, p.y; radius: 2.5 + if(sketch, 2.5 * wave * wave * wave, 0); color: mix(mint, ink, if(sketch, wave * wave * wave * 0.6, 0)) }
             }
         }
         for p in pts { Pt(p) }
@@ -131,11 +147,48 @@ scene Build {
         let bw = abs(x1 - x0)
         let bh = abs(y1 - y0)
         group {
-            show: here and (tool == box and drawing or boxed) and bw > 4 and bh > 4
+            show: here and (tool == box and drawing or boxed) and bw > 4 and bh > 4 and sk > 0.01
+            opacity: sk * if(sketch, 60% + 40% * (0.5 + 0.5 * sin(t * 300)), 100%)
             box { from: bl, bt; size: bw, bh; corner: 12; color: mint; opacity: 12% }
             box { from: bl, bt; size: bw, bh; corner: 12; stroke: 2.5; color: mint; opacity: 85% }
             text "{bw, 0} × {bh, 0}" { at: bl + bw / 2, bt + bh / 2; anchor: center; size: 12; color: ink; opacity: 80% }
         }
+
+        //  ── being built: its place ──
+        //  Four corners where it goes, breathing while the builder works, and
+        //  once it is on the screen a line of light down it with each change.
+        let working = c.state == thinking or c.state == acting or c.state == starting
+        prop work = 0 ~calm
+        follow work = if(building and working, 1, 0)
+        prop placed = 0 ~calm
+        follow placed = if(building and reg.s == screen.index and reg.w > 0, 1, 0)
+        group {
+            show: placed > 0.01
+            opacity: placed * (45% + 40% * work * (0.5 + 0.5 * sin(t * 240)))
+            let cl = min(26, min(reg.w, reg.h) / 3)
+            let gx = reg.x - 8
+            let gy = reg.y - 8
+            let gw = reg.w + 16
+            let gh = reg.h + 16
+            box { from: gx, gy; size: cl, 2.5; corner: 1.2; color: mint }
+            box { from: gx, gy; size: 2.5, cl; corner: 1.2; color: mint }
+            box { from: gx + gw - cl, gy; size: cl, 2.5; corner: 1.2; color: mint }
+            box { from: gx + gw - 2.5, gy; size: 2.5, cl; corner: 1.2; color: mint }
+            box { from: gx, gy + gh - 2.5; size: cl, 2.5; corner: 1.2; color: mint }
+            box { from: gx, gy + gh - cl; size: 2.5, cl; corner: 1.2; color: mint }
+            box { from: gx + gw - cl, gy + gh - 2.5; size: cl, 2.5; corner: 1.2; color: mint }
+            box { from: gx + gw - 2.5, gy + gh - cl; size: 2.5, cl; corner: 1.2; color: mint }
+        }
+        //  The scan: on what is already there, while it is being changed.
+        group {
+            show: placed > 0.01 and made and work > 0.01
+            opacity: work * placed
+            let sy = reg.y + reg.h * fract(t * 0.45)
+            box { from: reg.x, sy - 18; size: reg.w, 18; color: mint; opacity: 10% }
+            box { from: reg.x, sy - 1; size: reg.w, 2; corner: 1; color: mint; opacity: 70% }
+        }
+        //  Its words while it is still only the sketch.
+        text "Building it…" { at: reg.x + reg.w / 2, reg.y + reg.h + 26; anchor: center; size: 12; weight: 650; color: mint; opacity: placed * sk * (55% + 45% * work); show: placed > 0.01 and sketch }
 
         //  What to do, the first time, in the middle.
         group {
