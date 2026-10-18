@@ -907,6 +907,8 @@ scene Creation {
         current = nil
         fact.building = false
         text["build.name"] = ""
+        --  Told by hand: a logic's own change to a fact reaches no `fact:` handler.
+        if api.finished then api.finished() end
     end
     -- ── what you keep runs with the session ──
     --  pleamar-wm reads two files of yours when the session starts: the

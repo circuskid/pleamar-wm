@@ -191,10 +191,10 @@ return function(shared)
     on("open_old", function(i)
         creations.open_id(old_ids[(tonumber(i) or -1) + 1])
     end)
-    on("fact:building", function(v)
-        if not v then
-            fact.tool = "pen"
-            show_olds()
-        end
-    end)
+    --  A creation left (kept, thrown or as it is): the pen again, and what you
+    --  built drawn on the screen.
+    creations.finished = function()
+        fact.tool = "pen"
+        show_olds()
+    end
 end

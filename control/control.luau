@@ -34,7 +34,11 @@ local function look()
     end
 end
 
-on("go", function(page) fact.page = page end)
+local open_build = nil   -- the Build page, below: wakes its engine up
+on("go", function(page)
+    fact.page = page
+    if page == 3 and open_build then open_build() end
+end)
 
 on("pick", function(v)
     local k, l = v // 10, v % 10
@@ -116,17 +120,21 @@ local function on_engine(m)
     end
 end
 
+local starting = false
 local function start_engine()
-    if engine then return end
+    if engine or starting then return end
+    starting = true
     engine_ready = false
     text["b.status"] = "Waking the engine up (the first time it is fetched: a minute)…"
     run("sh", { "-c", 'cd "$0/agent" && { [ -d node_modules/@earendil-works/pi-coding-agent ] && [ ! package-lock.json -nt node_modules/.package-lock.json ]; } || { command -v npm >/dev/null || { echo "npm is missing: install Node.js (and npm) to build with AI"; exit 3; }; npm ci --ignore-scripts --no-audit --no-fund >/dev/null 2>&1 || { echo "the engine could not be installed (npm ci)"; exit 4; }; }', BUILD }, function(out, code)
+        starting = false
         if code ~= 0 then
+            waiting = {}
             fact["b.asked"] = true
             text["b.status"] = tostring(out or ""):gsub("%s+$", "")
             return
         end
-        text["b.status"] = ""
+        if text["b.status"]:sub(1, 6) == "Waking" then text["b.status"] = "" end
         local ok, id = pcall(spawn, "sh", { BUILD .. "/agent/sandbox" }, function(line)
             if line:sub(1, 1) ~= "{" then
                 if line:sub(1, 7) == "build: " then text["b.status"] = line:sub(8) end
@@ -144,12 +152,19 @@ local function start_engine()
     end, { errors = true })
 end
 
-on("fact:page", function(p)
-    if p == 3 then conf(function() start_engine(); if engine then say({ type = "models" }) end end) end
-end)
+--  Opened by a click (`go`) or from outside (`--say … "fact page 3"`): the
+--  logic's own change to a fact does not reach its `fact:` handlers.
+open_build = function()
+    conf(function() start_engine(); if engine then say({ type = "models" }) end end)
+end
+on("fact:page", function(p) if p == 3 then open_build() end end)
 on("b_login", function(k)
     local p = PROVIDERS[(tonumber(k) or -1) + 1]
     if not p then return end
+    if not engine and not starting then
+        start_engine()
+        if not starting and not engine then return end
+    end
     text["b.status"] = "Opening " .. NAMES_OF[p] .. "'s sign-in in your browser…"
     say({ type = "login", provider = p })
 end)
