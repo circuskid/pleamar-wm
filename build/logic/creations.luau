@@ -693,6 +693,14 @@ scene Creation {
         return nil
     end
     --  Doing it: `done(ok, words, extra)` answers the model.
+    --  The agent's cursor, once it has tried something with it: its light on
+    --  the monitor stays until told it is done (or a minute and a half).
+    local poked = false
+    function api.release_cursor()
+        if not poked then return end
+        poked = false
+        run("pleamar-wm", { "agent", "done" }, function() end, { errors = true })
+    end
     function api.perform(tool, args, done)
         if not current then done(false, "Nothing is being built.") return end
         local id = current.id
@@ -716,6 +724,9 @@ scene Creation {
             if not fine then
                 done(false, "Not an order it understands: describe · press ZONE [right|middle] [2] · hold ZONE · drag ZONE DX DY · wheel ZONE N · type ZONE TEXT · key COMBO · fact NAME VALUE · emit EVENT · get NAME.")
                 return
+            end
+            if order:match("^press ") or order:match("^hold ") or order:match("^drag ") or order:match("^wheel ") or order:match("^type ") or order:match("^key ") then
+                poked = true
             end
             run("pleamar", { "--say", id, order }, function(out, code)
                 done(code == 0, tostring(out or ""))
@@ -949,6 +960,7 @@ scene Creation {
         if chat then chat.note(string.format(tr("Undone: %s"), last.why ~= "" and last.why or last.file)) end
     end)
     local function finish()
+        api.release_cursor()
         refs = {}
         show_refs()
         if chat then

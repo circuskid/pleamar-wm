@@ -167,13 +167,18 @@ return function(shared)
                 local row = add(3, shared.creations.said(tool, args), tool == "creation_write" and tostring(args.why or "") or "", 0)
                 perform(m.id, tool, args, row)
             end
+        --  Its turn over (done, stopped or failed): the agent's cursor it
+        --  tried things with goes too.
         elseif kind == "done" then
+            shared.creations.release_cursor()
             if live then history[#history + 1] = { role = "assistant", text = rows[live].text } end
             settle("idle")
         elseif kind == "cancelled" then
+            shared.creations.release_cursor()
             add(5, tr("Stopped."))
             settle("idle")
         elseif kind == "failed" then
+            shared.creations.release_cursor()
             if m.reason == "no_model" or m.reason == "not_started" then
                 add(5, tr("Not signed in: pleamar-wm's control centre › Build, to sign in"))
             else
