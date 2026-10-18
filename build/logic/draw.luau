@@ -28,15 +28,17 @@ return function(shared)
     end
     local old_ids = {}
     local function show_olds()
-        local out = {}
-        old_ids = {}
-        for _, item in ipairs(creations.olds()) do
-            old_ids[#old_ids + 1] = item.id
-            local r = item.region
-            out[#out + 1] = { x = r.x, y = r.y, w = r.w, h = r.h, s = r.monitor_index or 0, name = tostring(item.name or item.id) }
-            if #out >= 16 then break end
-        end
-        model.olds = out
+        creations.olds(function(list)
+            local out = {}
+            old_ids = {}
+            for _, item in ipairs(list) do
+                old_ids[#old_ids + 1] = item.id
+                local r = item.region
+                out[#out + 1] = { x = r.x, y = r.y, w = r.w, h = r.h, s = r.monitor_index or 0, name = tostring(item.name or item.id) }
+                if #out >= 16 then break end
+            end
+            model.olds = out
+        end)
     end
 
     -- ── on and off ──

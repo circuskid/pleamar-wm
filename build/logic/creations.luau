@@ -590,18 +590,46 @@ scene Creation {
         chosen(m, x, y, w, h)
         for _, p in ipairs(pictures or {}) do take_picture(p) end
     end
+    --  Where each running creation is now, by its id: its surface on the
+    --  screen, which may not be where it was drawn (one you can drag).
+    local function where_now(done)
+        layers(function(list)
+            local now = {}
+            for _, l in ipairs(list) do
+                local id = l.who:match("/creations/([%w]+)/")
+                if id and not l.hidden then now[id] = { x = l.x, y = l.y, w = l.w, h = l.h, monitor_index = l.monitor } end
+            end
+            done(now)
+        end)
+    end
+    local function moved(region, now)
+        if not now then return region end
+        local r = {}
+        for k, v in pairs(region or {}) do r[k] = v end
+        for k, v in pairs(now) do r[k] = v end
+        return r
+    end
     function api.open_id(id)
         if not id or current then return end
         local record = load(id)
-        if record then stop_kept(id); open(record) end
+        if not record then return end
+        where_now(function(now)
+            record.region = moved(record.region, now[id])
+            stop_kept(id)
+            open(record)
+        end)
     end
-    --  What the drawing shows of what you built: where each one is.
-    function api.olds()
-        local out = {}
-        for _, item in ipairs(index().list) do
-            if not item.thrown and item.region then out[#out + 1] = item end
-        end
-        return out
+    --  What the drawing shows of what you built: where each one is now.
+    function api.olds(done)
+        where_now(function(now)
+            local out = {}
+            for _, item in ipairs(index().list) do
+                if not item.thrown and item.region then
+                    out[#out + 1] = { id = item.id, name = item.name, region = moved(item.region, now[item.id]) }
+                end
+            end
+            done(out)
+        end)
     end
     --  Ready before the first creation: pleamar's guides, its source, Marea.
     function api.prepare()
