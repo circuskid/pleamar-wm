@@ -23,8 +23,8 @@
 //              all of its monitor —bars and gaps kept— over the others, and back
 //   Super+V    the window with the keyboard floats over the tiles, and back
 //   Free is a canvas: a plane with no edges that the monitor looks at
-//              through a camera —drag the empty plane to move about, the
-//              wheel to come closer or go further, Super+-/+ too, Super+0 to
+//              through a camera —Super and a drag on the empty plane to move
+//              about, the wheel to come closer or go further, Super+-/+ too, Super+0 to
 //              see them all—; let go near another window's edge, it takes
 //              its side; a window's port, dragged to another, wires them
 //              (only it: its monitor stays tiled, the others close up)
@@ -424,8 +424,8 @@ scene Session {
     fact wgone = -1
     fact wgone.n = 0
     // ── the canvas's plane, under the windows: a faint grid of it, that
-    // moves and comes closer with the camera; and the empty plane, dragged,
-    // moves about, the wheel (Super and the wheel, over a window) zooms
+    // moves and comes closer with the camera; and the empty plane, dragged
+    // with Super held, moves about, the wheel (Super and the wheel, over a window) zooms
     // where the pointer is ──
     prop cvgx.0 = 0 ~glide
     prop cvgy.0 = 0 ~glide
@@ -480,31 +480,34 @@ scene Session {
         }
     }
     zone box canvas_bg { from: 0, 0; size: W, H; active: cvh and not overview; label: "The canvas"; role: region }
-    // Dragged: the camera goes the other way, as if the plane were held.
+    // Dragged with Super held: the camera goes the other way, as if the plane
+    // were held. Without Super a drag on the desktop leaves it where it is,
+    // and Super let go on the way stops it there.
     fact cvp.k = -1
     fact cvp.x = 0
     fact cvp.y = 0
-    on press canvas_bg {
+    on press canvas_bg while keys.super > 0.5 {
         cvp.k = mon
         cvp.x = pick(mon, cvx.0, cvx.1, cvx.2, cvx.3)
         cvp.y = pick(mon, cvy.0, cvy.1, cvy.2, cvy.3)
     }
-    on drag canvas_bg while cvp.k == 0 {
+    on drag canvas_bg while cvp.k == 0 and keys.super > 0.5 {
         cvx.0 = cvp.x - drag.dx / cvz.0
         cvy.0 = cvp.y - drag.dy / cvz.0
     }
-    on drag canvas_bg while cvp.k == 1 {
+    on drag canvas_bg while cvp.k == 1 and keys.super > 0.5 {
         cvx.1 = cvp.x - drag.dx / cvz.1
         cvy.1 = cvp.y - drag.dy / cvz.1
     }
-    on drag canvas_bg while cvp.k == 2 {
+    on drag canvas_bg while cvp.k == 2 and keys.super > 0.5 {
         cvx.2 = cvp.x - drag.dx / cvz.2
         cvy.2 = cvp.y - drag.dy / cvz.2
     }
-    on drag canvas_bg while cvp.k == 3 {
+    on drag canvas_bg while cvp.k == 3 and keys.super > 0.5 {
         cvx.3 = cvp.x - drag.dx / cvz.3
         cvy.3 = cvp.y - drag.dy / cvz.3
     }
+    on drag canvas_bg while cvp.k >= 0 and keys.super < 0.5 { cvp.k = -1 }
     on release canvas_bg { cvp.k = -1 }
     on press canvas_bg while wedit >= 0 {
         wedit = -1
@@ -599,7 +602,7 @@ scene Session {
     // window keeps its place on the plane (`fx`… are the plane's then, not
     // the monitor's) and the program is asked that size; the monitor shows
     // it as the camera sees it, smaller the further away. The empty plane,
-    // dragged, moves the camera; the wheel —or Super and the wheel, over a
+    // dragged with Super held, moves the camera; the wheel —or Super and the wheel, over a
     // window— brings it closer or further where the pointer is. ──
     fact cv.0 = 0
     fact cv.1 = 0

@@ -80,8 +80,8 @@ the open windows without closing anything.
   with `$SHELL -c`, or anything not on a terminal, gets the shell as it is;
   `terminals off` in session.conf leaves them all as they are.
 - **Free is a canvas** (0.4.6): a free monitor's windows live on a plane with
-  no edges, seen through a camera, as an infinite whiteboard of windows. Drag
-  the empty plane to move about, the wheel (or Super and the wheel, over a
+  no edges, seen through a camera, as an infinite whiteboard of windows. Super
+  and a drag on the empty plane to move about, the wheel (or Super and the wheel, over a
   window) to come closer or go further right where the pointer is, `Super+0`
   to see them all. Each program keeps its own size and is shown smaller when
   the camera is further away; let a window go near another one's edge and it
