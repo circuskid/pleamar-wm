@@ -93,6 +93,7 @@ scene Session {
     fact overview = false
     fact dragging = -1                   // the window being carried by its title bar
     fact tgrab = -1                      // the title bar pressed, until it is let go
+    fact tsup = 0                        // and whether Super was held as it was (from anywhere on the window)
     // Super held (the compositor says): then a window is carried from
     // anywhere on it, tiled or free, even to the other monitor.
     fact keys.super = 0
@@ -662,6 +663,7 @@ scene Session {
     fact g.w = 0
     fact g.h = 0
     fact sizing = -1
+    fact sedge = -1                      // which of its edges: 0 left · 1 right · 2 bottom · 3 corner
     let lay.here = pick(mon, lay.0, lay.1, lay.2, lay.3)
     let strip.x = pick(mon, screen.0.width, screen.1.width, screen.2.width, screen.3.width) / 2 - 9 * 60 / 2
     let strip.y = pick(mon, win.reserved.0.top, win.reserved.1.top, win.reserved.2.top, win.reserved.3.top) + 6
@@ -683,8 +685,10 @@ scene Session {
     // it; while it is held there, a pool of water shows where it will be.
     // (Not on an edge that leads to another monitor: let go there, it goes
     // to that one.) 1 left half · 2 right half · 3 all · 4 top left · 5
-    // bottom left · 6 top right · 7 bottom right ──
-    let mg.free = dragging >= 0 and (pick(mon, free.0, free.1, free.2, free.3) > 0.5 or dfl)
+    // bottom left · 6 top right · 7 bottom right. Only for one carried by its
+    // title bar: one taken with Super from anywhere on it —meaning to move
+    // a canvas, Super held over a window— came back half its size ──
+    let mg.free = dragging >= 0 and tsup < 0.5 and (pick(mon, free.0, free.1, free.2, free.3) > 0.5 or dfl)
     let mg.Ws = pick(mon, screen.0.width, screen.1.width, screen.2.width, screen.3.width) - pick(mon, win.reserved.0.left, win.reserved.1.left, win.reserved.2.left, win.reserved.3.left) - pick(mon, win.reserved.0.right, win.reserved.1.right, win.reserved.2.right, win.reserved.3.right)
     let mg.x0 = pick(mon, win.reserved.0.left, win.reserved.1.left, win.reserved.2.left, win.reserved.3.left)
     let mg.top = pick(mon, win.reserved.0.top, win.reserved.1.top, win.reserved.2.top, win.reserved.3.top)
@@ -11024,6 +11028,7 @@ scene Session {
         // Taken by an edge or the corner: where it was and how big.
         on press left_edge.$i {
             sizing = i
+            sedge = 0
             g.x = fx.$i
             g.y = fy.$i
             g.w = fw.$i
@@ -11031,6 +11036,7 @@ scene Session {
         }
         on press right_edge.$i {
             sizing = i
+            sedge = 1
             g.x = fx.$i
             g.y = fy.$i
             g.w = fw.$i
@@ -11038,6 +11044,7 @@ scene Session {
         }
         on press bottom_edge.$i {
             sizing = i
+            sedge = 2
             g.x = fx.$i
             g.y = fy.$i
             g.w = fw.$i
@@ -11045,22 +11052,39 @@ scene Session {
         }
         on press corner.$i {
             sizing = i
+            sedge = 3
             g.x = fx.$i
             g.y = fy.$i
             g.w = fw.$i
             g.h = fh.$i
         }
-        on release left_edge.$i { sizing = -1 }
-        on release right_edge.$i { sizing = -1 }
-        on release bottom_edge.$i { sizing = -1 }
-        on release corner.$i { sizing = -1 }
-        on drag left_edge.$i {
+        on release left_edge.$i {
+            sizing = -1
+            sedge = -1
+        }
+        on release right_edge.$i {
+            sizing = -1
+            sedge = -1
+        }
+        on release bottom_edge.$i {
+            sizing = -1
+            sedge = -1
+        }
+        on release corner.$i {
+            sizing = -1
+            sedge = -1
+        }
+        // Only the edge pressed: another one brought under the point pressed
+        // —a canvas's camera moved with Super— took the drag, and stretched
+        // its window to the size the last one taken had: windows shrank and
+        // moved as the canvas was moved.
+        on drag left_edge.$i while sizing == i and sedge == 0 {
             fx.$i = min(g.x + drag.dx / cz, g.x + g.w - 240)
             fw.$i = max(g.w - drag.dx / cz, 240)
         }
-        on drag right_edge.$i { fw.$i = max(g.w + drag.dx / cz, 240) }
-        on drag bottom_edge.$i { fh.$i = max(g.h + drag.dy / cz, 140) }
-        on drag corner.$i {
+        on drag right_edge.$i while sizing == i and sedge == 1 { fw.$i = max(g.w + drag.dx / cz, 240) }
+        on drag bottom_edge.$i while sizing == i and sedge == 2 { fh.$i = max(g.h + drag.dy / cz, 140) }
+        on drag corner.$i while sizing == i and sedge == 3 {
             fw.$i = max(g.w + drag.dx / cz, 240)
             fh.$i = max(g.h + drag.dy / cz, 140)
         }
@@ -11072,6 +11096,7 @@ scene Session {
         }
         on press title.$i {
             tgrab = i
+            tsup = keys.super
             focus win.$i
             grab.x = pointer.x - x.$i
             grab.y = pointer.y - y.$i
