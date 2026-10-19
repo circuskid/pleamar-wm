@@ -92,6 +92,7 @@ scene Session {
     fact ratio = 0.56                    // the leader's share of the width
     fact overview = false
     fact dragging = -1                   // the window being carried by its title bar
+    fact tgrab = -1                      // the title bar pressed, until it is let go
     // Super held (the compositor says): then a window is carried from
     // anywhere on it, tiled or free, even to the other monitor.
     fact keys.super = 0
@@ -11070,6 +11071,7 @@ scene Session {
             wave.$i: 1 after 16ms
         }
         on press title.$i {
+            tgrab = i
             focus win.$i
             grab.x = pointer.x - x.$i
             grab.y = pointer.y - y.$i
@@ -11078,15 +11080,18 @@ scene Session {
         // places; at the edge towards the other monitor, it goes there.
         // (While carried it is drawn at the mouse, further down; its place
         // here waits.)
-        // Only the one that started it: another shown moving aside may come
-        // to hold the point pressed.
-        on drag title.$i while dragging < 0 or dragging == i {
+        // Only the one that started it, and only if it was its title bar that
+        // was pressed: another shown moving aside —or brought there by a
+        // canvas's camera, moved with Super— may come to hold the point
+        // pressed, and it was carried with no title bar to let go of.
+        on drag title.$i while dragging == i or (dragging < 0 and tgrab == i) {
             dragging = i
         }
         // Let go, it starts from where it was left —on the monitor it was left
         // on— and glides to its place from there.
         on release title.$i {
             dragging = -1
+            tgrab = -1
             dx.$i: mouse.x - grab.x - x.$i ~0ms
             dy.$i: mouse.y - grab.y - y.$i ~0ms
             dx.$i: 0 after 30ms
