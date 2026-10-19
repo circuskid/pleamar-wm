@@ -38,6 +38,20 @@ the open windows without closing anything.
 
 # What's new
 
+- **Wires: agents that work together** (0.4.6): on a canvas, drag the drop at
+  the start of a window's title bar to another window and the two are wired
+  —a current of water between them; the mouse over its middle cuts it—. The
+  wire is the person's word: an agent in one terminal (Claude Code, Codex,
+  any with a shell) may then read the other, type in it and hand it tasks
+  with `pleamar-wm link`: `whoami`, `list`, `read N`, `send N TEXT --enter`,
+  `keys N enter`, `wait N`, and `delegate N TASK` —the task goes in as a
+  paste with a line that says where it comes from, a drop of light runs
+  along the wire while it is worked on, and the answer comes back: printed
+  with `--wait`, or typed into the asking agent's terminal when it is done—.
+  Each window with an agent says in its title bar what it is and where, and
+  whether it works, is ready or waits for you (its edge goes amber); zoomed
+  out, a canvas shows it big over each window, and one waiting out of sight
+  leaves a drop at the monitor's edge that takes the camera there.
 - **Every terminal readable and writable from outside** (0.4.6): in a session,
   the terminals it starts —kitty, Alacritty, foot, Konsole, any that runs
   `$SHELL`— run the user's shell through a thin layer of pleamar-wm's own,

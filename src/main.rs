@@ -22,6 +22,7 @@ mod route;
 mod screen;
 mod session;
 mod term;
+mod link;
 
 fn main() {
     // Called as the user's shell (the session's `SHELL`): the layer between
@@ -51,6 +52,10 @@ fn main() {
     // `pleamar-wm agent …`: the agent's hands from a shell (see agent_cli.rs).
     if args.first().map(String::as_str) == Some("agent") {
         std::process::exit(agent_cli::run(&args[1..]));
+    }
+    // `pleamar-wm link …`: an agent in a terminal and the windows wired to its own (see link.rs).
+    if args.first().map(String::as_str) == Some("link") {
+        std::process::exit(link::run(&args[1..]));
     }
     // `pleamar-wm term …`: the terminals' layers, by hand (see term.rs).
     if args.first().map(String::as_str) == Some("term") {

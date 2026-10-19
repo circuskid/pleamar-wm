@@ -913,6 +913,18 @@ fn run(max: usize, to_render: Sender<ToRender>, rx: Channel<ToNest>, ready: std:
         write_control_entry();
     }
     let _ = ready.send(Some(()));
+    // Which process each window is, for `pleamar-wm link` (`windows`, next to
+    // the desktop file), every second; and what runs in the terminals among
+    // them, for the scene (term.rs: their agent and its state).
+    if !monitors.is_empty() {
+        use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
+        let _ = state.handle.insert_source(Timer::from_duration(std::time::Duration::from_secs(1)), |_, _, state| {
+            state.write_windows();
+            TimeoutAction::ToDuration(std::time::Duration::from_secs(1))
+        });
+        let file = format!("{}/windows", std::path::Path::new(&desktop_file_of(&state.socket)).parent().map(|p| p.display().to_string()).unwrap_or_default());
+        crate::term::watch_agents(file, state.to_render.clone());
+    }
     // A session of its own starts what the desktop has (the wallpaper, Marea):
     // `PLEAMAR_WM_AUTOSTART`, or ~/.config/pleamar/autostart, one command a
     // line. The same file `pleamar --autostart` runs on another compositor;
@@ -1817,6 +1829,28 @@ impl State {
         }
         let _ = std::fs::write(file, &text);
         *written = text;
+    }
+
+    /// The windows and their processes (`slot pid<TAB>title`), for `pleamar-wm
+    /// link`: written when something changed.
+    fn write_windows(&self) {
+        let mut text = String::new();
+        for (slot, w) in self.slots.iter().enumerate() {
+            if let Some(w) = w {
+                text.push_str(&format!("{slot} {}\t{}\n", self.pid_of(slot), w.title.replace(['\t', '\n'], " ")));
+            }
+        }
+        static WRITTEN: Mutex<Option<String>> = Mutex::new(None);
+        let mut written = WRITTEN.lock().unwrap();
+        if written.as_deref() == Some(text.as_str()) {
+            return;
+        }
+        let file = desktop_file_of(&self.socket);
+        if let Some(dir) = std::path::Path::new(&file).parent() {
+            let _ = std::fs::create_dir_all(dir);
+            let _ = std::fs::write(dir.join("windows"), &text);
+        }
+        *written = Some(text);
     }
 
     /// A monitor was plugged in or out: the outputs follow, by name. What was

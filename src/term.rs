@@ -588,6 +588,67 @@ pub fn layers() -> Vec<(i32, std::collections::BTreeMap<String, String>)> {
     out
 }
 
+/// What an agent's screen shows when it asks the person something (a
+/// permission, a choice): Claude Code's and Codex's questions.
+fn asks_the_person(screen: &str) -> bool {
+    const ASKS: [&str; 7] = ["Do you want to", "Would you like to", "❯ 1. Yes", "Allow command", "Approve", "(y/n)", "[y/N]"];
+    let tail: Vec<&str> = screen.lines().rev().take(25).collect();
+    tail.iter().any(|l| ASKS.iter().any(|a| l.contains(a)))
+}
+
+/// For the scene, every second: in which windows (`windows`, `slot pid`, as
+/// pleamar-wm writes it) an agent runs in a terminal through a layer, and
+/// how it is —`ag.N` 1 working, 2 ready, 3 waiting for the person; `agt.N`
+/// «claude · ~/Proyectos/pleamar»—. Said only when it changes. In a thread of
+/// its own: a terminal slow to answer never holds the compositor.
+pub fn watch_agents(windows: String, to_render: std::sync::mpsc::Sender<pleamar::scene::ToRender>) {
+    use pleamar::scene::{intern, ToRender};
+    std::thread::spawn(move || {
+        let home = std::env::var("HOME").unwrap_or_default();
+        let mut said: std::collections::HashMap<usize, (u8, String)> = std::collections::HashMap::new();
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            let text = std::fs::read_to_string(&windows).unwrap_or_default();
+            let slots: Vec<(usize, u32)> = text.lines().filter_map(|l| {
+                let mut w = l.split('\t').next()?.split_whitespace();
+                Some((w.next()?.parse().ok()?, w.next()?.parse().ok()?))
+            }).collect();
+            let all = if slots.is_empty() { Vec::new() } else { layers() };
+            let mut now: std::collections::HashMap<usize, (u8, String)> = std::collections::HashMap::new();
+            for (slot, pid) in &slots {
+                let mine: Vec<&(i32, std::collections::BTreeMap<String, String>)> = all.iter().filter(|(_, i)| i.get("terminal").and_then(|t| t.parse::<u32>().ok()) == Some(*pid)).collect();
+                // A terminal with several shells: the one with an agent, the busiest.
+                let Some((id, info)) = mine.iter().filter(|(_, i)| i.get("agent").is_some_and(|a| !a.is_empty())).min_by_key(|(_, i)| i.get("quiet").and_then(|q| q.parse::<u64>().ok()).unwrap_or(u64::MAX)) else { continue };
+                let agent = info.get("agent").cloned().unwrap_or_default();
+                let cwd = info.get("cwd").cloned().unwrap_or_default();
+                let cwd = if !home.is_empty() && cwd.starts_with(&home) { format!("~{}", &cwd[home.len()..]) } else { cwd };
+                let working = info.get("state").map(String::as_str) == Some("working");
+                let state = if working {
+                    1
+                } else if ask(&format!("{}/{id}.sock", socket_dir()), "read 25").is_ok_and(|s| asks_the_person(&s)) {
+                    3
+                } else {
+                    2
+                };
+                now.insert(*slot, (state, format!("{agent} · {cwd}")));
+            }
+            let slots_known: std::collections::HashSet<usize> = said.keys().chain(now.keys()).copied().collect();
+            for slot in slots_known {
+                let new = now.get(&slot).cloned().unwrap_or((0, String::new()));
+                if said.get(&slot) != Some(&new) {
+                    let _ = to_render.send(ToRender::ExternalFact(intern(&format!("ag.{slot}")), new.0.to_string()));
+                    let _ = to_render.send(ToRender::Text(intern(&format!("agt.{slot}")), new.1.clone()));
+                    if new.0 == 0 {
+                        said.remove(&slot);
+                    } else {
+                        said.insert(slot, new);
+                    }
+                }
+            }
+        }
+    });
+}
+
 /// `pleamar-wm term list | read ID [N] | paste ID TEXT | keys ID NAME…`:
 /// the layers, by hand (what `link` builds on).
 pub fn cli(args: &[String]) -> i32 {

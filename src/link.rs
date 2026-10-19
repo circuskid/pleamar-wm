@@ -1,0 +1,412 @@
+//! `pleamar-wm link …`: what an agent in a terminal does with the windows
+//! wired to its own, on a canvas.
+//!
+//! A wire between two windows (dragged from one's port to the other) is the
+//! person's word that what runs in one may read, type in and hand tasks to
+//! the other. This is how: it finds the caller's window by its terminal
+//! (`PLEAMAR_TERMINAL`, the layer of term.rs, and the window of that
+//! terminal's process), the wires from the window manager's scene, and the
+//! terminal of the window at the other end; then reads and types through
+//! that terminal's layer. A window wired to the caller's that runs no
+//! terminal through a layer can be listed, not read nor typed in.
+
+use std::collections::BTreeMap;
+use std::time::{Duration, Instant};
+
+type Info = BTreeMap<String, String>;
+
+/// A window of the session: its place in the scene and its process.
+struct Win {
+    slot: usize,
+    pid: u32,
+    title: String,
+}
+
+/// The session's windows, as pleamar-wm writes them (`windows` next to its
+/// other sockets): `slot pid<TAB>title`, one a line.
+fn windows() -> Result<Vec<Win>, String> {
+    let dir = std::env::var("PLEAMAR_SOCKETS").ok().filter(|d| !d.is_empty()).ok_or("not inside a pleamar-wm session")?;
+    let text = std::fs::read_to_string(format!("{dir}/windows")).map_err(|_| "this pleamar-wm session says nothing of its windows (an older pleamar-wm?)".to_string())?;
+    Ok(text
+        .lines()
+        .filter_map(|l| {
+            let (head, title) = l.split_once('\t').unwrap_or((l, ""));
+            let mut w = head.split_whitespace();
+            Some(Win { slot: w.next()?.parse().ok()?, pid: w.next()?.parse().ok()?, title: title.to_owned() })
+        })
+        .collect())
+}
+
+/// Orders to the window manager's scene, answered in order.
+fn say(orders: &[String]) -> Vec<String> {
+    let me = std::env::current_exe().unwrap_or_else(|_| "pleamar-wm".into());
+    let out = std::process::Command::new(me).arg("--say").arg("wm").args(orders).output();
+    out.map(|o| String::from_utf8_lossy(&o.stdout).lines().map(str::to_owned).collect()).unwrap_or_default()
+}
+
+/// The wires: which slots each joins, by its place (`wire.K`).
+fn wires() -> Vec<(usize, i64, i64)> {
+    let orders: Vec<String> = (0..8).flat_map(|k| [format!("get wire.{k}.a"), format!("get wire.{k}.b")]).collect();
+    let got: Vec<i64> = say(&orders).iter().map(|v| v.trim().parse::<f64>().map_or(-1, |v| v.round() as i64)).collect();
+    (0..8).filter_map(|k| Some((k, *got.get(2 * k)?, *got.get(2 * k + 1)?))).filter(|(_, a, b)| *a >= 0 && *b >= 0).collect()
+}
+
+/// The terminal layer whose terminal is that process, if one.
+fn layer_of(pid: u32, layers: &[(i32, Info)]) -> Option<(i32, Info)> {
+    let mut of: Vec<&(i32, Info)> = layers.iter().filter(|(_, i)| i.get("terminal").and_then(|t| t.parse::<u32>().ok()) == Some(pid)).collect();
+    // A terminal with several shells (tabs) speaks for the one that moved last.
+    of.sort_by_key(|(_, i)| i.get("quiet").and_then(|q| q.parse::<u64>().ok()).unwrap_or(u64::MAX));
+    of.first().map(|l| (*l).clone())
+}
+
+struct Here {
+    layer: i32,
+    info: Info,
+    slot: usize,
+    wins: Vec<Win>,
+    layers: Vec<(i32, Info)>,
+    wires: Vec<(usize, i64, i64)>,
+}
+
+/// Who calls: its terminal's layer, and the window that terminal is.
+fn here() -> Result<Here, String> {
+    let layer: i32 = std::env::var("PLEAMAR_TERMINAL").ok().and_then(|v| v.parse().ok()).ok_or("this is not a terminal of a pleamar-wm session (no PLEAMAR_TERMINAL): only an agent in one can use the windows wired to it")?;
+    let layers = crate::term::layers();
+    let info = layers.iter().find(|(id, _)| *id == layer).map(|(_, i)| i.clone()).ok_or("this terminal's layer does not answer")?;
+    let terminal: u32 = info.get("terminal").and_then(|t| t.parse().ok()).unwrap_or(0);
+    let wins = windows()?;
+    let slot = wins.iter().find(|w| w.pid == terminal).map(|w| w.slot).ok_or("this terminal's window is not one of the session's")?;
+    Ok(Here { layer, info, slot, wins, layers, wires: wires() })
+}
+
+impl Here {
+    /// The windows wired to the caller's, with the wire's place and which end the caller is.
+    fn wired(&self) -> Vec<(usize, &Win, bool)> {
+        self.wires
+            .iter()
+            .filter_map(|(k, a, b)| {
+                let (mine_is_a, other) = if *a as usize == self.slot { (true, *b) } else if *b as usize == self.slot { (false, *a) } else { return None };
+                self.wins.iter().find(|w| w.slot == other as usize).map(|w| (*k, w, mine_is_a))
+            })
+            .collect()
+    }
+
+    /// The one named: by its number, or by what runs in it if only one is that.
+    fn target(&self, name: &str) -> Result<(usize, &Win, bool, Option<(i32, Info)>), String> {
+        let wired = self.wired();
+        let found: Vec<&(usize, &Win, bool)> = match name.trim_start_matches('#').parse::<usize>() {
+            Ok(n) => wired.iter().filter(|(_, w, _)| w.slot == n).collect(),
+            Err(_) => wired
+                .iter()
+                .filter(|(_, w, _)| {
+                    let l = layer_of(w.pid, &self.layers);
+                    l.as_ref().and_then(|(_, i)| i.get("agent")).is_some_and(|a| a == name) || w.title.to_lowercase().contains(&name.to_lowercase())
+                })
+                .collect(),
+        };
+        match found.as_slice() {
+            [(k, w, a)] => Ok((*k, w, *a, layer_of(w.pid, &self.layers))),
+            [] if name.parse::<usize>().is_ok() => Err(format!("window {name} isn't wired to yours. Ask the person to wire them: on a canvas (Super+Shift+W), drag the drop at the start of one's title bar to the other.")),
+            [] => Err(format!("no window wired to yours is «{name}». `pleamar-wm link list` says which are.")),
+            _ => Err(format!("more than one window wired to yours is «{name}»: name it by its number (`pleamar-wm link list`).")),
+        }
+    }
+}
+
+fn line_of(slot: usize, w: &Win, layer: Option<&(i32, Info)>) -> String {
+    let g = |k: &str| layer.and_then(|(_, i)| i.get(k)).cloned().unwrap_or_default();
+    let what = match layer {
+        None => "no terminal of its own to read or type in".to_owned(),
+        Some(_) => {
+            let agent = g("agent");
+            let state = match (agent.is_empty(), g("state").as_str()) {
+                (true, _) => String::new(),
+                (false, "working") => " (working)".into(),
+                (false, "idle") => " (ready)".into(),
+                _ => String::new(),
+            };
+            let runs = if agent.is_empty() { g("command") } else { agent };
+            format!("{runs}{state} in {}", tilde(&g("cwd")))
+        }
+    };
+    format!("{slot}  «{}»  {what}", w.title)
+}
+
+fn tilde(path: &str) -> String {
+    match std::env::var("HOME") {
+        Ok(h) if !h.is_empty() && path.starts_with(&h) => format!("~{}", &path[h.len()..]),
+        _ => path.to_owned(),
+    }
+}
+
+fn hex(b: &[u8]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+fn socket(id: i32) -> String {
+    format!("{}/{id}.sock", crate::term::socket_dir())
+}
+
+fn info(id: i32) -> Info {
+    crate::term::ask(&socket(id), "info")
+        .map(|t| t.lines().filter_map(|l| l.split_once(' ').map(|(k, v)| (k.to_owned(), v.to_owned())).or_else(|| Some((l.to_owned(), String::new())))).collect())
+        .unwrap_or_default()
+}
+
+fn read(id: i32, lines: usize) -> String {
+    crate::term::ask(&socket(id), &format!("read {lines}")).unwrap_or_default()
+}
+
+fn paste(id: i32, text: &str) -> Result<(), String> {
+    match crate::term::ask(&socket(id), &format!("paste {}", hex(text.as_bytes())))? {
+        r if r.starts_with("ok") => Ok(()),
+        r => Err(r.trim().to_owned()),
+    }
+}
+
+fn keys(id: i32, names: &str) -> Result<(), String> {
+    match crate::term::ask(&socket(id), &format!("keys {names}"))? {
+        r if r.starts_with("ok") => Ok(()),
+        r => Err(r.trim().to_owned()),
+    }
+}
+
+/// Done with what it was doing: its agent shows it is ready (✳), or —no
+/// agent's title to go by— nothing has come out of it for a while.
+fn at_rest(i: &Info) -> bool {
+    match i.get("state").map(String::as_str) {
+        Some("idle") => true,
+        Some("working") => false,
+        _ => i.get("quiet").and_then(|q| q.parse::<u64>().ok()).is_some_and(|q| q > 4000),
+    }
+}
+
+/// Waits for that terminal to be at rest, up to a time. Whether it got there.
+fn wait_rest(id: i32, timeout: Duration) -> bool {
+    let start = Instant::now();
+    // At rest twice in a row: a title that blinks between frames is not an end.
+    let mut seen = 0;
+    while start.elapsed() < timeout {
+        let i = info(id);
+        if i.is_empty() {
+            return false;
+        }
+        seen = if at_rest(&i) { seen + 1 } else { 0 };
+        if seen >= 2 {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    false
+}
+
+/// What has come out since the task was handed: after the line that
+/// says what it is (the last one, if it handed several), or since a reading
+/// `before` had that many lines.
+fn since(id: i32, before: usize) -> String {
+    let all = read(id, 2000);
+    let lines: Vec<&str> = all.lines().collect();
+    let from = match lines.iter().rposition(|l| l.contains("through a wire]")) {
+        Some(k) => k + 1,
+        None => before.saturating_sub(3).min(lines.len()),
+    };
+    let new = &lines[from..];
+    let keep = new.len().saturating_sub(80);
+    new[keep..].join("\n")
+}
+
+fn flow(k: usize, v: i32) {
+    say(&[format!("fact wire.{k}.flow {v}")]);
+}
+
+fn number(args: &[String], flag: &str, default: u64) -> u64 {
+    args.iter().position(|a| a == flag).and_then(|p| args.get(p + 1)).and_then(|v| v.parse().ok()).unwrap_or(default)
+}
+
+fn words(args: &[String]) -> String {
+    let mut out = Vec::new();
+    let mut skip = false;
+    for a in args {
+        if skip {
+            skip = false;
+            continue;
+        }
+        match a.as_str() {
+            "--timeout" | "--lines" => skip = true,
+            "--enter" | "--wait" => {}
+            _ => out.push(a.as_str()),
+        }
+    }
+    out.join(" ")
+}
+
+pub fn run(args: &[String]) -> i32 {
+    match go(args) {
+        Ok(out) => {
+            if !out.is_empty() {
+                println!("{}", out.trim_end());
+            }
+            0
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            1
+        }
+    }
+}
+
+const USAGE: &str = "pleamar-wm link — the windows wired to yours (on a canvas, the person wires them)
+  whoami                          which window you are, and what is wired to it
+  list                            the windows wired to yours: number, title, what runs there
+  read N [LINES]                  the last lines of its terminal (200)
+  send N TEXT [--enter]           TEXT typed into it as a paste; --enter presses Enter after
+  keys N KEY…                     keys: enter tab escape up down left right backspace ctrl+c y 1 …
+  wait N [--timeout S]            until its agent is done (ready again), then its last lines
+  delegate N TASK [--wait] [--timeout S]
+                                  hands TASK to the agent there. Without --wait it returns at
+                                  once and the answer is typed into your terminal when it is
+                                  done; with --wait, the answer is what this prints.
+N is a window's number from `list`, or the agent that runs there (`codex`) if only one is.";
+
+fn go(args: &[String]) -> Result<String, String> {
+    let verb = args.first().map(String::as_str).unwrap_or("");
+    let rest = args.get(1..).unwrap_or(&[]);
+    match verb {
+        "whoami" => {
+            let h = here()?;
+            let me = h.wins.iter().find(|w| w.slot == h.slot).map(|w| w.title.clone()).unwrap_or_default();
+            let agent = h.info.get("agent").filter(|a| !a.is_empty()).cloned().unwrap_or_else(|| "a shell".into());
+            let mut out = format!("You are window {} «{me}»: {agent} in {} (terminal {}).\n", h.slot, tilde(h.info.get("cwd").map_or("", String::as_str)), h.layer);
+            let wired = h.wired();
+            if wired.is_empty() {
+                out.push_str("No window is wired to yours.");
+            } else {
+                out.push_str("Wired to it:\n");
+                for (_, w, _) in wired {
+                    out.push_str(&format!("  {}\n", line_of(w.slot, w, layer_of(w.pid, &h.layers).as_ref())));
+                }
+            }
+            Ok(out)
+        }
+        "list" => {
+            let h = here()?;
+            let wired = h.wired();
+            if wired.is_empty() {
+                return Ok("No window is wired to yours. The person wires them: on a canvas (Super+Shift+W), dragging the drop at the start of a window's title bar to another window.".into());
+            }
+            Ok(wired.iter().map(|(_, w, _)| line_of(w.slot, w, layer_of(w.pid, &h.layers).as_ref())).collect::<Vec<_>>().join("\n"))
+        }
+        "read" | "send" | "keys" | "wait" | "delegate" => {
+            let name = rest.first().ok_or(USAGE)?;
+            let h = here()?;
+            let (k, w, mine_is_a, layer) = h.target(name)?;
+            let (id, tinfo) = layer.ok_or_else(|| format!("window {} «{}» has no terminal of its own (through pleamar-wm's layer) to read or type in", w.slot, w.title))?;
+            match verb {
+                "read" => Ok(read(id, rest.get(1).and_then(|n| n.parse().ok()).unwrap_or(200))),
+                "send" => {
+                    let text = words(&rest[1..]);
+                    if text.is_empty() {
+                        return Err("send N TEXT [--enter]".into());
+                    }
+                    paste(id, &text)?;
+                    if rest.iter().any(|a| a == "--enter") {
+                        std::thread::sleep(Duration::from_millis(150));
+                        keys(id, "enter")?;
+                    }
+                    Ok(format!("typed into window {}", w.slot))
+                }
+                "keys" => {
+                    keys(id, &rest[1..].join(" "))?;
+                    std::thread::sleep(Duration::from_millis(300));
+                    Ok(read(id, 30))
+                }
+                "wait" => {
+                    let timeout = Duration::from_secs(number(rest, "--timeout", 600));
+                    if wait_rest(id, timeout) {
+                        Ok(read(id, 60))
+                    } else {
+                        Err(format!("window {} is still at it after {} s", w.slot, timeout.as_secs()))
+                    }
+                }
+                _ => {
+                    let task = words(&rest[1..]);
+                    if task.is_empty() {
+                        return Err("delegate N TASK [--wait] [--timeout S]".into());
+                    }
+                    if tinfo.get("agent").is_none_or(|a| a.is_empty()) {
+                        return Err(format!("window {} runs no agent ({}): `send` types in it instead", w.slot, tinfo.get("command").cloned().unwrap_or_default()));
+                    }
+                    if tinfo.get("state").map(String::as_str) == Some("working") {
+                        return Err(format!("window {}'s agent is busy: `wait {}` until it is done", w.slot, w.slot));
+                    }
+                    let me = h.wins.iter().find(|w| w.slot == h.slot).map(|w| w.title.clone()).unwrap_or_default();
+                    let who = h.info.get("agent").filter(|a| !a.is_empty()).cloned().unwrap_or_else(|| "a shell".into());
+                    let before = read(id, 2000).lines().count();
+                    // The drop runs along the wire, towards it, while it works.
+                    flow(k, if mine_is_a { 1 } else { -1 });
+                    // A line that says what this is, as a paste of its own (a long
+                    // paste is taken as data, not as something asked), the task
+                    // after it, and Enter.
+                    paste(id, &format!("[a task from {who} in window {} «{me}», through a wire] It is in the pasted text: do it, and end with your answer.", h.slot))?;
+                    std::thread::sleep(Duration::from_millis(120));
+                    paste(id, &task)?;
+                    std::thread::sleep(Duration::from_millis(150));
+                    keys(id, "enter")?;
+                    // Taken? Its agent starts working (or something comes out).
+                    let started = (0..10).any(|_| {
+                        std::thread::sleep(Duration::from_millis(400));
+                        let i = info(id);
+                        i.get("state").map(String::as_str) == Some("working") || i.get("quiet").and_then(|q| q.parse::<u64>().ok()).is_some_and(|q| q < 300)
+                    });
+                    if !started {
+                        keys(id, "enter")?;
+                    }
+                    let timeout = number(rest, "--timeout", 600);
+                    // A shell has nowhere to be told the answer later (it would
+                    // run it): it waits for it.
+                    let caller_agent = h.info.get("agent").is_some_and(|a| !a.is_empty());
+                    if rest.iter().any(|a| a == "--wait") || !caller_agent {
+                        let done = wait_rest(id, Duration::from_secs(timeout));
+                        back(k, mine_is_a);
+                        let answer = since(id, before);
+                        return if done { Ok(answer) } else { Err(format!("window {} did not finish in {timeout} s; so far:\n{answer}", w.slot)) };
+                    }
+                    // Not waited for: a process of its own waits, and types the
+                    // answer into this terminal when it is there.
+                    let me_exe = std::env::current_exe().map_err(|e| e.to_string())?;
+                    let mut c = std::process::Command::new("setsid");
+                    c.arg("-f").arg(me_exe).args(["link", "_deliver", &id.to_string(), &h.layer.to_string(), &k.to_string(), &(mine_is_a as u8).to_string(), &before.to_string(), &timeout.to_string(), &w.slot.to_string()]);
+                    c.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+                    c.spawn().map_err(|e| e.to_string())?;
+                    Ok(format!("Handed to window {} «{}». Its answer will be typed into this terminal when it is done; or `pleamar-wm link wait {}`.", w.slot, w.title, w.slot))
+                }
+            }
+        }
+        // (The process `delegate` leaves to bring the answer back.)
+        "_deliver" => {
+            let n = |i: usize| rest.get(i).and_then(|v| v.parse::<i64>().ok()).unwrap_or(0);
+            let (id, mine, k, mine_is_a, before, timeout, slot) = (n(0) as i32, n(1) as i32, n(2) as usize, n(3) == 1, n(4) as usize, n(5) as u64, n(6));
+            let done = wait_rest(id, Duration::from_secs(timeout));
+            back(k, mine_is_a);
+            let answer = since(id, before);
+            // Into the caller's terminal once it is free: not over its person
+            // typing, nor into the middle of its own work.
+            wait_rest(mine, Duration::from_secs(3600));
+            let head = if done { format!("[the answer from window {slot}, to the task you handed it] It is in the pasted text.") } else { format!("[window {slot} did not finish your task in {timeout} s] What it said so far is in the pasted text.") };
+            paste(mine, &head)?;
+            std::thread::sleep(Duration::from_millis(120));
+            paste(mine, &answer)?;
+            std::thread::sleep(Duration::from_millis(150));
+            keys(mine, "enter")?;
+            Ok(String::new())
+        }
+        _ => Err(USAGE.into()),
+    }
+}
+
+/// The answer goes back along the wire, a moment, and it is still again.
+fn back(k: usize, mine_is_a: bool) {
+    flow(k, if mine_is_a { -1 } else { 1 });
+    std::thread::sleep(Duration::from_millis(1600));
+    flow(k, 0);
+}
