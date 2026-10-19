@@ -28,6 +28,8 @@
   wf-recorder,
   wl-clipboard,
   libnotify,
+  nodejs,
+  bubblewrap,
 }:
 let
   version = (lib.importTOML ../Cargo.toml).package.version;
@@ -115,6 +117,10 @@ rustPlatform.buildRustPackage {
           wf-recorder
           wl-clipboard
           libnotify
+          # Build (Super+B): its AI engine runs with Node, fetched by npm
+          # the first time, in a bubblewrap sandbox.
+          nodejs
+          bubblewrap
         ]
       } \
       --set-default FONTCONFIG_FILE ${fontconfig.out}/etc/fonts/fonts.conf
