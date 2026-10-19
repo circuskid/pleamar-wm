@@ -4724,8 +4724,11 @@ scene Session {
         text "8" { at: (dk.px.0 + 7 * 26 + 13), dk.cy.0; anchor: center; size: 9; weight: 700; color: #0c0e10; show: 7 < dk.p.0 and win.shown.0 == 8 }
         zone ellipse dkpool.7.0 { at: (dk.px.0 + 7 * 26 + 13), dk.cy.0; radius: 12; cursor: pointer; active: shore.0 > 0.6 and 7 < dk.p.0 and not overview; label: "Workspace 8" }
     }
+    // Dragged, its icon goes to another place in the dock (or out of it);
+    // only past a few pixels: a real mouse moves one between press and
+    // release, and the click that opens the program was taken for a drag.
     on press dockz.0.0 { impulse buoy.0.0 -9 }
-    on drag dockz.0.0 while dkdrag.0 < 0 {
+    on drag dockz.0.0 while dkdrag.0 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.0 = 0
         pv.0 = -1
     }
@@ -4754,7 +4757,7 @@ scene Session {
     }
     on hover dockz.0.0 for 450ms while dkdrag.0 < 0 and dmenu.0 < 0 and win.dock.0.0.windows > 0 { pv.0 = 0 }
     on press dockz.1.0 { impulse buoy.0.1 -9 }
-    on drag dockz.1.0 while dkdrag.0 < 0 {
+    on drag dockz.1.0 while dkdrag.0 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.0 = 1
         pv.0 = -1
     }
@@ -4783,7 +4786,7 @@ scene Session {
     }
     on hover dockz.1.0 for 450ms while dkdrag.0 < 0 and dmenu.0 < 0 and win.dock.0.1.windows > 0 { pv.0 = 1 }
     on press dockz.2.0 { impulse buoy.0.2 -9 }
-    on drag dockz.2.0 while dkdrag.0 < 0 {
+    on drag dockz.2.0 while dkdrag.0 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.0 = 2
         pv.0 = -1
     }
@@ -4812,7 +4815,7 @@ scene Session {
     }
     on hover dockz.2.0 for 450ms while dkdrag.0 < 0 and dmenu.0 < 0 and win.dock.0.2.windows > 0 { pv.0 = 2 }
     on press dockz.3.0 { impulse buoy.0.3 -9 }
-    on drag dockz.3.0 while dkdrag.0 < 0 {
+    on drag dockz.3.0 while dkdrag.0 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.0 = 3
         pv.0 = -1
     }
@@ -4841,7 +4844,7 @@ scene Session {
     }
     on hover dockz.3.0 for 450ms while dkdrag.0 < 0 and dmenu.0 < 0 and win.dock.0.3.windows > 0 { pv.0 = 3 }
     on press dockz.4.0 { impulse buoy.0.4 -9 }
-    on drag dockz.4.0 while dkdrag.0 < 0 {
+    on drag dockz.4.0 while dkdrag.0 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.0 = 4
         pv.0 = -1
     }
@@ -4870,7 +4873,7 @@ scene Session {
     }
     on hover dockz.4.0 for 450ms while dkdrag.0 < 0 and dmenu.0 < 0 and win.dock.0.4.windows > 0 { pv.0 = 4 }
     on press dockz.5.0 { impulse buoy.0.5 -9 }
-    on drag dockz.5.0 while dkdrag.0 < 0 {
+    on drag dockz.5.0 while dkdrag.0 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.0 = 5
         pv.0 = -1
     }
@@ -4899,7 +4902,7 @@ scene Session {
     }
     on hover dockz.5.0 for 450ms while dkdrag.0 < 0 and dmenu.0 < 0 and win.dock.0.5.windows > 0 { pv.0 = 5 }
     on press dockz.6.0 { impulse buoy.0.6 -9 }
-    on drag dockz.6.0 while dkdrag.0 < 0 {
+    on drag dockz.6.0 while dkdrag.0 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.0 = 6
         pv.0 = -1
     }
@@ -4928,7 +4931,7 @@ scene Session {
     }
     on hover dockz.6.0 for 450ms while dkdrag.0 < 0 and dmenu.0 < 0 and win.dock.0.6.windows > 0 { pv.0 = 6 }
     on press dockz.7.0 { impulse buoy.0.7 -9 }
-    on drag dockz.7.0 while dkdrag.0 < 0 {
+    on drag dockz.7.0 while dkdrag.0 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.0 = 7
         pv.0 = -1
     }
@@ -4957,7 +4960,7 @@ scene Session {
     }
     on hover dockz.7.0 for 450ms while dkdrag.0 < 0 and dmenu.0 < 0 and win.dock.0.7.windows > 0 { pv.0 = 7 }
     on press dockz.8.0 { impulse buoy.0.8 -9 }
-    on drag dockz.8.0 while dkdrag.0 < 0 {
+    on drag dockz.8.0 while dkdrag.0 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.0 = 8
         pv.0 = -1
     }
@@ -4986,7 +4989,7 @@ scene Session {
     }
     on hover dockz.8.0 for 450ms while dkdrag.0 < 0 and dmenu.0 < 0 and win.dock.0.8.windows > 0 { pv.0 = 8 }
     on press dockz.9.0 { impulse buoy.0.9 -9 }
-    on drag dockz.9.0 while dkdrag.0 < 0 {
+    on drag dockz.9.0 while dkdrag.0 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.0 = 9
         pv.0 = -1
     }
@@ -5015,7 +5018,7 @@ scene Session {
     }
     on hover dockz.9.0 for 450ms while dkdrag.0 < 0 and dmenu.0 < 0 and win.dock.0.9.windows > 0 { pv.0 = 9 }
     on press dockz.10.0 { impulse buoy.0.10 -9 }
-    on drag dockz.10.0 while dkdrag.0 < 0 {
+    on drag dockz.10.0 while dkdrag.0 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.0 = 10
         pv.0 = -1
     }
@@ -5044,7 +5047,7 @@ scene Session {
     }
     on hover dockz.10.0 for 450ms while dkdrag.0 < 0 and dmenu.0 < 0 and win.dock.0.10.windows > 0 { pv.0 = 10 }
     on press dockz.11.0 { impulse buoy.0.11 -9 }
-    on drag dockz.11.0 while dkdrag.0 < 0 {
+    on drag dockz.11.0 while dkdrag.0 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.0 = 11
         pv.0 = -1
     }
@@ -5356,7 +5359,7 @@ scene Session {
         zone ellipse dkpool.7.1 { at: (dk.px.1 + 7 * 26 + 13), dk.cy.1; radius: 12; cursor: pointer; active: shore.1 > 0.6 and 7 < dk.p.1 and not overview; label: "Workspace 8" }
     }
     on press dockz.0.1 { impulse buoy.1.0 -9 }
-    on drag dockz.0.1 while dkdrag.1 < 0 {
+    on drag dockz.0.1 while dkdrag.1 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.1 = 0
         pv.1 = -1
     }
@@ -5385,7 +5388,7 @@ scene Session {
     }
     on hover dockz.0.1 for 450ms while dkdrag.1 < 0 and dmenu.1 < 0 and win.dock.1.0.windows > 0 { pv.1 = 0 }
     on press dockz.1.1 { impulse buoy.1.1 -9 }
-    on drag dockz.1.1 while dkdrag.1 < 0 {
+    on drag dockz.1.1 while dkdrag.1 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.1 = 1
         pv.1 = -1
     }
@@ -5414,7 +5417,7 @@ scene Session {
     }
     on hover dockz.1.1 for 450ms while dkdrag.1 < 0 and dmenu.1 < 0 and win.dock.1.1.windows > 0 { pv.1 = 1 }
     on press dockz.2.1 { impulse buoy.1.2 -9 }
-    on drag dockz.2.1 while dkdrag.1 < 0 {
+    on drag dockz.2.1 while dkdrag.1 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.1 = 2
         pv.1 = -1
     }
@@ -5443,7 +5446,7 @@ scene Session {
     }
     on hover dockz.2.1 for 450ms while dkdrag.1 < 0 and dmenu.1 < 0 and win.dock.1.2.windows > 0 { pv.1 = 2 }
     on press dockz.3.1 { impulse buoy.1.3 -9 }
-    on drag dockz.3.1 while dkdrag.1 < 0 {
+    on drag dockz.3.1 while dkdrag.1 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.1 = 3
         pv.1 = -1
     }
@@ -5472,7 +5475,7 @@ scene Session {
     }
     on hover dockz.3.1 for 450ms while dkdrag.1 < 0 and dmenu.1 < 0 and win.dock.1.3.windows > 0 { pv.1 = 3 }
     on press dockz.4.1 { impulse buoy.1.4 -9 }
-    on drag dockz.4.1 while dkdrag.1 < 0 {
+    on drag dockz.4.1 while dkdrag.1 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.1 = 4
         pv.1 = -1
     }
@@ -5501,7 +5504,7 @@ scene Session {
     }
     on hover dockz.4.1 for 450ms while dkdrag.1 < 0 and dmenu.1 < 0 and win.dock.1.4.windows > 0 { pv.1 = 4 }
     on press dockz.5.1 { impulse buoy.1.5 -9 }
-    on drag dockz.5.1 while dkdrag.1 < 0 {
+    on drag dockz.5.1 while dkdrag.1 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.1 = 5
         pv.1 = -1
     }
@@ -5530,7 +5533,7 @@ scene Session {
     }
     on hover dockz.5.1 for 450ms while dkdrag.1 < 0 and dmenu.1 < 0 and win.dock.1.5.windows > 0 { pv.1 = 5 }
     on press dockz.6.1 { impulse buoy.1.6 -9 }
-    on drag dockz.6.1 while dkdrag.1 < 0 {
+    on drag dockz.6.1 while dkdrag.1 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.1 = 6
         pv.1 = -1
     }
@@ -5559,7 +5562,7 @@ scene Session {
     }
     on hover dockz.6.1 for 450ms while dkdrag.1 < 0 and dmenu.1 < 0 and win.dock.1.6.windows > 0 { pv.1 = 6 }
     on press dockz.7.1 { impulse buoy.1.7 -9 }
-    on drag dockz.7.1 while dkdrag.1 < 0 {
+    on drag dockz.7.1 while dkdrag.1 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.1 = 7
         pv.1 = -1
     }
@@ -5588,7 +5591,7 @@ scene Session {
     }
     on hover dockz.7.1 for 450ms while dkdrag.1 < 0 and dmenu.1 < 0 and win.dock.1.7.windows > 0 { pv.1 = 7 }
     on press dockz.8.1 { impulse buoy.1.8 -9 }
-    on drag dockz.8.1 while dkdrag.1 < 0 {
+    on drag dockz.8.1 while dkdrag.1 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.1 = 8
         pv.1 = -1
     }
@@ -5617,7 +5620,7 @@ scene Session {
     }
     on hover dockz.8.1 for 450ms while dkdrag.1 < 0 and dmenu.1 < 0 and win.dock.1.8.windows > 0 { pv.1 = 8 }
     on press dockz.9.1 { impulse buoy.1.9 -9 }
-    on drag dockz.9.1 while dkdrag.1 < 0 {
+    on drag dockz.9.1 while dkdrag.1 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.1 = 9
         pv.1 = -1
     }
@@ -5646,7 +5649,7 @@ scene Session {
     }
     on hover dockz.9.1 for 450ms while dkdrag.1 < 0 and dmenu.1 < 0 and win.dock.1.9.windows > 0 { pv.1 = 9 }
     on press dockz.10.1 { impulse buoy.1.10 -9 }
-    on drag dockz.10.1 while dkdrag.1 < 0 {
+    on drag dockz.10.1 while dkdrag.1 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.1 = 10
         pv.1 = -1
     }
@@ -5675,7 +5678,7 @@ scene Session {
     }
     on hover dockz.10.1 for 450ms while dkdrag.1 < 0 and dmenu.1 < 0 and win.dock.1.10.windows > 0 { pv.1 = 10 }
     on press dockz.11.1 { impulse buoy.1.11 -9 }
-    on drag dockz.11.1 while dkdrag.1 < 0 {
+    on drag dockz.11.1 while dkdrag.1 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.1 = 11
         pv.1 = -1
     }
@@ -5987,7 +5990,7 @@ scene Session {
         zone ellipse dkpool.7.2 { at: (dk.px.2 + 7 * 26 + 13), dk.cy.2; radius: 12; cursor: pointer; active: shore.2 > 0.6 and 7 < dk.p.2 and not overview; label: "Workspace 8" }
     }
     on press dockz.0.2 { impulse buoy.2.0 -9 }
-    on drag dockz.0.2 while dkdrag.2 < 0 {
+    on drag dockz.0.2 while dkdrag.2 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.2 = 0
         pv.2 = -1
     }
@@ -6016,7 +6019,7 @@ scene Session {
     }
     on hover dockz.0.2 for 450ms while dkdrag.2 < 0 and dmenu.2 < 0 and win.dock.2.0.windows > 0 { pv.2 = 0 }
     on press dockz.1.2 { impulse buoy.2.1 -9 }
-    on drag dockz.1.2 while dkdrag.2 < 0 {
+    on drag dockz.1.2 while dkdrag.2 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.2 = 1
         pv.2 = -1
     }
@@ -6045,7 +6048,7 @@ scene Session {
     }
     on hover dockz.1.2 for 450ms while dkdrag.2 < 0 and dmenu.2 < 0 and win.dock.2.1.windows > 0 { pv.2 = 1 }
     on press dockz.2.2 { impulse buoy.2.2 -9 }
-    on drag dockz.2.2 while dkdrag.2 < 0 {
+    on drag dockz.2.2 while dkdrag.2 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.2 = 2
         pv.2 = -1
     }
@@ -6074,7 +6077,7 @@ scene Session {
     }
     on hover dockz.2.2 for 450ms while dkdrag.2 < 0 and dmenu.2 < 0 and win.dock.2.2.windows > 0 { pv.2 = 2 }
     on press dockz.3.2 { impulse buoy.2.3 -9 }
-    on drag dockz.3.2 while dkdrag.2 < 0 {
+    on drag dockz.3.2 while dkdrag.2 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.2 = 3
         pv.2 = -1
     }
@@ -6103,7 +6106,7 @@ scene Session {
     }
     on hover dockz.3.2 for 450ms while dkdrag.2 < 0 and dmenu.2 < 0 and win.dock.2.3.windows > 0 { pv.2 = 3 }
     on press dockz.4.2 { impulse buoy.2.4 -9 }
-    on drag dockz.4.2 while dkdrag.2 < 0 {
+    on drag dockz.4.2 while dkdrag.2 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.2 = 4
         pv.2 = -1
     }
@@ -6132,7 +6135,7 @@ scene Session {
     }
     on hover dockz.4.2 for 450ms while dkdrag.2 < 0 and dmenu.2 < 0 and win.dock.2.4.windows > 0 { pv.2 = 4 }
     on press dockz.5.2 { impulse buoy.2.5 -9 }
-    on drag dockz.5.2 while dkdrag.2 < 0 {
+    on drag dockz.5.2 while dkdrag.2 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.2 = 5
         pv.2 = -1
     }
@@ -6161,7 +6164,7 @@ scene Session {
     }
     on hover dockz.5.2 for 450ms while dkdrag.2 < 0 and dmenu.2 < 0 and win.dock.2.5.windows > 0 { pv.2 = 5 }
     on press dockz.6.2 { impulse buoy.2.6 -9 }
-    on drag dockz.6.2 while dkdrag.2 < 0 {
+    on drag dockz.6.2 while dkdrag.2 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.2 = 6
         pv.2 = -1
     }
@@ -6190,7 +6193,7 @@ scene Session {
     }
     on hover dockz.6.2 for 450ms while dkdrag.2 < 0 and dmenu.2 < 0 and win.dock.2.6.windows > 0 { pv.2 = 6 }
     on press dockz.7.2 { impulse buoy.2.7 -9 }
-    on drag dockz.7.2 while dkdrag.2 < 0 {
+    on drag dockz.7.2 while dkdrag.2 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.2 = 7
         pv.2 = -1
     }
@@ -6219,7 +6222,7 @@ scene Session {
     }
     on hover dockz.7.2 for 450ms while dkdrag.2 < 0 and dmenu.2 < 0 and win.dock.2.7.windows > 0 { pv.2 = 7 }
     on press dockz.8.2 { impulse buoy.2.8 -9 }
-    on drag dockz.8.2 while dkdrag.2 < 0 {
+    on drag dockz.8.2 while dkdrag.2 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.2 = 8
         pv.2 = -1
     }
@@ -6248,7 +6251,7 @@ scene Session {
     }
     on hover dockz.8.2 for 450ms while dkdrag.2 < 0 and dmenu.2 < 0 and win.dock.2.8.windows > 0 { pv.2 = 8 }
     on press dockz.9.2 { impulse buoy.2.9 -9 }
-    on drag dockz.9.2 while dkdrag.2 < 0 {
+    on drag dockz.9.2 while dkdrag.2 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.2 = 9
         pv.2 = -1
     }
@@ -6277,7 +6280,7 @@ scene Session {
     }
     on hover dockz.9.2 for 450ms while dkdrag.2 < 0 and dmenu.2 < 0 and win.dock.2.9.windows > 0 { pv.2 = 9 }
     on press dockz.10.2 { impulse buoy.2.10 -9 }
-    on drag dockz.10.2 while dkdrag.2 < 0 {
+    on drag dockz.10.2 while dkdrag.2 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.2 = 10
         pv.2 = -1
     }
@@ -6306,7 +6309,7 @@ scene Session {
     }
     on hover dockz.10.2 for 450ms while dkdrag.2 < 0 and dmenu.2 < 0 and win.dock.2.10.windows > 0 { pv.2 = 10 }
     on press dockz.11.2 { impulse buoy.2.11 -9 }
-    on drag dockz.11.2 while dkdrag.2 < 0 {
+    on drag dockz.11.2 while dkdrag.2 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.2 = 11
         pv.2 = -1
     }
@@ -6618,7 +6621,7 @@ scene Session {
         zone ellipse dkpool.7.3 { at: (dk.px.3 + 7 * 26 + 13), dk.cy.3; radius: 12; cursor: pointer; active: shore.3 > 0.6 and 7 < dk.p.3 and not overview; label: "Workspace 8" }
     }
     on press dockz.0.3 { impulse buoy.3.0 -9 }
-    on drag dockz.0.3 while dkdrag.3 < 0 {
+    on drag dockz.0.3 while dkdrag.3 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.3 = 0
         pv.3 = -1
     }
@@ -6647,7 +6650,7 @@ scene Session {
     }
     on hover dockz.0.3 for 450ms while dkdrag.3 < 0 and dmenu.3 < 0 and win.dock.3.0.windows > 0 { pv.3 = 0 }
     on press dockz.1.3 { impulse buoy.3.1 -9 }
-    on drag dockz.1.3 while dkdrag.3 < 0 {
+    on drag dockz.1.3 while dkdrag.3 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.3 = 1
         pv.3 = -1
     }
@@ -6676,7 +6679,7 @@ scene Session {
     }
     on hover dockz.1.3 for 450ms while dkdrag.3 < 0 and dmenu.3 < 0 and win.dock.3.1.windows > 0 { pv.3 = 1 }
     on press dockz.2.3 { impulse buoy.3.2 -9 }
-    on drag dockz.2.3 while dkdrag.3 < 0 {
+    on drag dockz.2.3 while dkdrag.3 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.3 = 2
         pv.3 = -1
     }
@@ -6705,7 +6708,7 @@ scene Session {
     }
     on hover dockz.2.3 for 450ms while dkdrag.3 < 0 and dmenu.3 < 0 and win.dock.3.2.windows > 0 { pv.3 = 2 }
     on press dockz.3.3 { impulse buoy.3.3 -9 }
-    on drag dockz.3.3 while dkdrag.3 < 0 {
+    on drag dockz.3.3 while dkdrag.3 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.3 = 3
         pv.3 = -1
     }
@@ -6734,7 +6737,7 @@ scene Session {
     }
     on hover dockz.3.3 for 450ms while dkdrag.3 < 0 and dmenu.3 < 0 and win.dock.3.3.windows > 0 { pv.3 = 3 }
     on press dockz.4.3 { impulse buoy.3.4 -9 }
-    on drag dockz.4.3 while dkdrag.3 < 0 {
+    on drag dockz.4.3 while dkdrag.3 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.3 = 4
         pv.3 = -1
     }
@@ -6763,7 +6766,7 @@ scene Session {
     }
     on hover dockz.4.3 for 450ms while dkdrag.3 < 0 and dmenu.3 < 0 and win.dock.3.4.windows > 0 { pv.3 = 4 }
     on press dockz.5.3 { impulse buoy.3.5 -9 }
-    on drag dockz.5.3 while dkdrag.3 < 0 {
+    on drag dockz.5.3 while dkdrag.3 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.3 = 5
         pv.3 = -1
     }
@@ -6792,7 +6795,7 @@ scene Session {
     }
     on hover dockz.5.3 for 450ms while dkdrag.3 < 0 and dmenu.3 < 0 and win.dock.3.5.windows > 0 { pv.3 = 5 }
     on press dockz.6.3 { impulse buoy.3.6 -9 }
-    on drag dockz.6.3 while dkdrag.3 < 0 {
+    on drag dockz.6.3 while dkdrag.3 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.3 = 6
         pv.3 = -1
     }
@@ -6821,7 +6824,7 @@ scene Session {
     }
     on hover dockz.6.3 for 450ms while dkdrag.3 < 0 and dmenu.3 < 0 and win.dock.3.6.windows > 0 { pv.3 = 6 }
     on press dockz.7.3 { impulse buoy.3.7 -9 }
-    on drag dockz.7.3 while dkdrag.3 < 0 {
+    on drag dockz.7.3 while dkdrag.3 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.3 = 7
         pv.3 = -1
     }
@@ -6850,7 +6853,7 @@ scene Session {
     }
     on hover dockz.7.3 for 450ms while dkdrag.3 < 0 and dmenu.3 < 0 and win.dock.3.7.windows > 0 { pv.3 = 7 }
     on press dockz.8.3 { impulse buoy.3.8 -9 }
-    on drag dockz.8.3 while dkdrag.3 < 0 {
+    on drag dockz.8.3 while dkdrag.3 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.3 = 8
         pv.3 = -1
     }
@@ -6879,7 +6882,7 @@ scene Session {
     }
     on hover dockz.8.3 for 450ms while dkdrag.3 < 0 and dmenu.3 < 0 and win.dock.3.8.windows > 0 { pv.3 = 8 }
     on press dockz.9.3 { impulse buoy.3.9 -9 }
-    on drag dockz.9.3 while dkdrag.3 < 0 {
+    on drag dockz.9.3 while dkdrag.3 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.3 = 9
         pv.3 = -1
     }
@@ -6908,7 +6911,7 @@ scene Session {
     }
     on hover dockz.9.3 for 450ms while dkdrag.3 < 0 and dmenu.3 < 0 and win.dock.3.9.windows > 0 { pv.3 = 9 }
     on press dockz.10.3 { impulse buoy.3.10 -9 }
-    on drag dockz.10.3 while dkdrag.3 < 0 {
+    on drag dockz.10.3 while dkdrag.3 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.3 = 10
         pv.3 = -1
     }
@@ -6937,7 +6940,7 @@ scene Session {
     }
     on hover dockz.10.3 for 450ms while dkdrag.3 < 0 and dmenu.3 < 0 and win.dock.3.10.windows > 0 { pv.3 = 10 }
     on press dockz.11.3 { impulse buoy.3.11 -9 }
-    on drag dockz.11.3 while dkdrag.3 < 0 {
+    on drag dockz.11.3 while dkdrag.3 < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         dkdrag.3 = 11
         pv.3 = -1
     }
@@ -9157,7 +9160,9 @@ scene Session {
             zone box pcard.9.0 { from: pc.x.0, (pc.y.0 + 9 * (pc.h.0 + 20)); size: pc.w.0, pc.h.0; corner: 10; cursor: pointer; active: overview and not sharing and 9 < pc.n.0; label: "Workspace 10"; role: item }
         }
     }
-    on drag pcard.0.0 while pdrag.s < 0 {
+    // (A drag only past a few pixels, as the dock's: a click that moved one
+    // was taken for one, and chose nothing.)
+    on drag pcard.0.0 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 0
         pdrag.k = 0
     }
@@ -9167,7 +9172,7 @@ scene Session {
     }
     on release pcard.0.0 while pdrag.s == 0 and mon != 0 and 0 < win.used.0 { send workspace 1 on 0 to mon }
     on release pcard.0.0 { pdrag.s = -1 }
-    on drag pcard.1.0 while pdrag.s < 0 {
+    on drag pcard.1.0 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 0
         pdrag.k = 1
     }
@@ -9177,7 +9182,7 @@ scene Session {
     }
     on release pcard.1.0 while pdrag.s == 0 and mon != 0 and 1 < win.used.0 { send workspace 2 on 0 to mon }
     on release pcard.1.0 { pdrag.s = -1 }
-    on drag pcard.2.0 while pdrag.s < 0 {
+    on drag pcard.2.0 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 0
         pdrag.k = 2
     }
@@ -9187,7 +9192,7 @@ scene Session {
     }
     on release pcard.2.0 while pdrag.s == 0 and mon != 0 and 2 < win.used.0 { send workspace 3 on 0 to mon }
     on release pcard.2.0 { pdrag.s = -1 }
-    on drag pcard.3.0 while pdrag.s < 0 {
+    on drag pcard.3.0 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 0
         pdrag.k = 3
     }
@@ -9197,7 +9202,7 @@ scene Session {
     }
     on release pcard.3.0 while pdrag.s == 0 and mon != 0 and 3 < win.used.0 { send workspace 4 on 0 to mon }
     on release pcard.3.0 { pdrag.s = -1 }
-    on drag pcard.4.0 while pdrag.s < 0 {
+    on drag pcard.4.0 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 0
         pdrag.k = 4
     }
@@ -9207,7 +9212,7 @@ scene Session {
     }
     on release pcard.4.0 while pdrag.s == 0 and mon != 0 and 4 < win.used.0 { send workspace 5 on 0 to mon }
     on release pcard.4.0 { pdrag.s = -1 }
-    on drag pcard.5.0 while pdrag.s < 0 {
+    on drag pcard.5.0 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 0
         pdrag.k = 5
     }
@@ -9217,7 +9222,7 @@ scene Session {
     }
     on release pcard.5.0 while pdrag.s == 0 and mon != 0 and 5 < win.used.0 { send workspace 6 on 0 to mon }
     on release pcard.5.0 { pdrag.s = -1 }
-    on drag pcard.6.0 while pdrag.s < 0 {
+    on drag pcard.6.0 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 0
         pdrag.k = 6
     }
@@ -9227,7 +9232,7 @@ scene Session {
     }
     on release pcard.6.0 while pdrag.s == 0 and mon != 0 and 6 < win.used.0 { send workspace 7 on 0 to mon }
     on release pcard.6.0 { pdrag.s = -1 }
-    on drag pcard.7.0 while pdrag.s < 0 {
+    on drag pcard.7.0 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 0
         pdrag.k = 7
     }
@@ -9237,7 +9242,7 @@ scene Session {
     }
     on release pcard.7.0 while pdrag.s == 0 and mon != 0 and 7 < win.used.0 { send workspace 8 on 0 to mon }
     on release pcard.7.0 { pdrag.s = -1 }
-    on drag pcard.8.0 while pdrag.s < 0 {
+    on drag pcard.8.0 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 0
         pdrag.k = 8
     }
@@ -9247,7 +9252,7 @@ scene Session {
     }
     on release pcard.8.0 while pdrag.s == 0 and mon != 0 and 8 < win.used.0 { send workspace 9 on 0 to mon }
     on release pcard.8.0 { pdrag.s = -1 }
-    on drag pcard.9.0 while pdrag.s < 0 {
+    on drag pcard.9.0 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 0
         pdrag.k = 9
     }
@@ -9421,7 +9426,7 @@ scene Session {
             zone box pcard.9.1 { from: pc.x.1, (pc.y.1 + 9 * (pc.h.1 + 20)); size: pc.w.1, pc.h.1; corner: 10; cursor: pointer; active: overview and not sharing and 9 < pc.n.1; label: "Workspace 10"; role: item }
         }
     }
-    on drag pcard.0.1 while pdrag.s < 0 {
+    on drag pcard.0.1 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 1
         pdrag.k = 0
     }
@@ -9431,7 +9436,7 @@ scene Session {
     }
     on release pcard.0.1 while pdrag.s == 1 and mon != 1 and 0 < win.used.1 { send workspace 1 on 1 to mon }
     on release pcard.0.1 { pdrag.s = -1 }
-    on drag pcard.1.1 while pdrag.s < 0 {
+    on drag pcard.1.1 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 1
         pdrag.k = 1
     }
@@ -9441,7 +9446,7 @@ scene Session {
     }
     on release pcard.1.1 while pdrag.s == 1 and mon != 1 and 1 < win.used.1 { send workspace 2 on 1 to mon }
     on release pcard.1.1 { pdrag.s = -1 }
-    on drag pcard.2.1 while pdrag.s < 0 {
+    on drag pcard.2.1 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 1
         pdrag.k = 2
     }
@@ -9451,7 +9456,7 @@ scene Session {
     }
     on release pcard.2.1 while pdrag.s == 1 and mon != 1 and 2 < win.used.1 { send workspace 3 on 1 to mon }
     on release pcard.2.1 { pdrag.s = -1 }
-    on drag pcard.3.1 while pdrag.s < 0 {
+    on drag pcard.3.1 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 1
         pdrag.k = 3
     }
@@ -9461,7 +9466,7 @@ scene Session {
     }
     on release pcard.3.1 while pdrag.s == 1 and mon != 1 and 3 < win.used.1 { send workspace 4 on 1 to mon }
     on release pcard.3.1 { pdrag.s = -1 }
-    on drag pcard.4.1 while pdrag.s < 0 {
+    on drag pcard.4.1 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 1
         pdrag.k = 4
     }
@@ -9471,7 +9476,7 @@ scene Session {
     }
     on release pcard.4.1 while pdrag.s == 1 and mon != 1 and 4 < win.used.1 { send workspace 5 on 1 to mon }
     on release pcard.4.1 { pdrag.s = -1 }
-    on drag pcard.5.1 while pdrag.s < 0 {
+    on drag pcard.5.1 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 1
         pdrag.k = 5
     }
@@ -9481,7 +9486,7 @@ scene Session {
     }
     on release pcard.5.1 while pdrag.s == 1 and mon != 1 and 5 < win.used.1 { send workspace 6 on 1 to mon }
     on release pcard.5.1 { pdrag.s = -1 }
-    on drag pcard.6.1 while pdrag.s < 0 {
+    on drag pcard.6.1 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 1
         pdrag.k = 6
     }
@@ -9491,7 +9496,7 @@ scene Session {
     }
     on release pcard.6.1 while pdrag.s == 1 and mon != 1 and 6 < win.used.1 { send workspace 7 on 1 to mon }
     on release pcard.6.1 { pdrag.s = -1 }
-    on drag pcard.7.1 while pdrag.s < 0 {
+    on drag pcard.7.1 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 1
         pdrag.k = 7
     }
@@ -9501,7 +9506,7 @@ scene Session {
     }
     on release pcard.7.1 while pdrag.s == 1 and mon != 1 and 7 < win.used.1 { send workspace 8 on 1 to mon }
     on release pcard.7.1 { pdrag.s = -1 }
-    on drag pcard.8.1 while pdrag.s < 0 {
+    on drag pcard.8.1 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 1
         pdrag.k = 8
     }
@@ -9511,7 +9516,7 @@ scene Session {
     }
     on release pcard.8.1 while pdrag.s == 1 and mon != 1 and 8 < win.used.1 { send workspace 9 on 1 to mon }
     on release pcard.8.1 { pdrag.s = -1 }
-    on drag pcard.9.1 while pdrag.s < 0 {
+    on drag pcard.9.1 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 1
         pdrag.k = 9
     }
@@ -9685,7 +9690,7 @@ scene Session {
             zone box pcard.9.2 { from: pc.x.2, (pc.y.2 + 9 * (pc.h.2 + 20)); size: pc.w.2, pc.h.2; corner: 10; cursor: pointer; active: overview and not sharing and 9 < pc.n.2; label: "Workspace 10"; role: item }
         }
     }
-    on drag pcard.0.2 while pdrag.s < 0 {
+    on drag pcard.0.2 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 2
         pdrag.k = 0
     }
@@ -9695,7 +9700,7 @@ scene Session {
     }
     on release pcard.0.2 while pdrag.s == 2 and mon != 2 and 0 < win.used.2 { send workspace 1 on 2 to mon }
     on release pcard.0.2 { pdrag.s = -1 }
-    on drag pcard.1.2 while pdrag.s < 0 {
+    on drag pcard.1.2 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 2
         pdrag.k = 1
     }
@@ -9705,7 +9710,7 @@ scene Session {
     }
     on release pcard.1.2 while pdrag.s == 2 and mon != 2 and 1 < win.used.2 { send workspace 2 on 2 to mon }
     on release pcard.1.2 { pdrag.s = -1 }
-    on drag pcard.2.2 while pdrag.s < 0 {
+    on drag pcard.2.2 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 2
         pdrag.k = 2
     }
@@ -9715,7 +9720,7 @@ scene Session {
     }
     on release pcard.2.2 while pdrag.s == 2 and mon != 2 and 2 < win.used.2 { send workspace 3 on 2 to mon }
     on release pcard.2.2 { pdrag.s = -1 }
-    on drag pcard.3.2 while pdrag.s < 0 {
+    on drag pcard.3.2 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 2
         pdrag.k = 3
     }
@@ -9725,7 +9730,7 @@ scene Session {
     }
     on release pcard.3.2 while pdrag.s == 2 and mon != 2 and 3 < win.used.2 { send workspace 4 on 2 to mon }
     on release pcard.3.2 { pdrag.s = -1 }
-    on drag pcard.4.2 while pdrag.s < 0 {
+    on drag pcard.4.2 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 2
         pdrag.k = 4
     }
@@ -9735,7 +9740,7 @@ scene Session {
     }
     on release pcard.4.2 while pdrag.s == 2 and mon != 2 and 4 < win.used.2 { send workspace 5 on 2 to mon }
     on release pcard.4.2 { pdrag.s = -1 }
-    on drag pcard.5.2 while pdrag.s < 0 {
+    on drag pcard.5.2 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 2
         pdrag.k = 5
     }
@@ -9745,7 +9750,7 @@ scene Session {
     }
     on release pcard.5.2 while pdrag.s == 2 and mon != 2 and 5 < win.used.2 { send workspace 6 on 2 to mon }
     on release pcard.5.2 { pdrag.s = -1 }
-    on drag pcard.6.2 while pdrag.s < 0 {
+    on drag pcard.6.2 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 2
         pdrag.k = 6
     }
@@ -9755,7 +9760,7 @@ scene Session {
     }
     on release pcard.6.2 while pdrag.s == 2 and mon != 2 and 6 < win.used.2 { send workspace 7 on 2 to mon }
     on release pcard.6.2 { pdrag.s = -1 }
-    on drag pcard.7.2 while pdrag.s < 0 {
+    on drag pcard.7.2 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 2
         pdrag.k = 7
     }
@@ -9765,7 +9770,7 @@ scene Session {
     }
     on release pcard.7.2 while pdrag.s == 2 and mon != 2 and 7 < win.used.2 { send workspace 8 on 2 to mon }
     on release pcard.7.2 { pdrag.s = -1 }
-    on drag pcard.8.2 while pdrag.s < 0 {
+    on drag pcard.8.2 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 2
         pdrag.k = 8
     }
@@ -9775,7 +9780,7 @@ scene Session {
     }
     on release pcard.8.2 while pdrag.s == 2 and mon != 2 and 8 < win.used.2 { send workspace 9 on 2 to mon }
     on release pcard.8.2 { pdrag.s = -1 }
-    on drag pcard.9.2 while pdrag.s < 0 {
+    on drag pcard.9.2 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 2
         pdrag.k = 9
     }
@@ -9949,7 +9954,7 @@ scene Session {
             zone box pcard.9.3 { from: pc.x.3, (pc.y.3 + 9 * (pc.h.3 + 20)); size: pc.w.3, pc.h.3; corner: 10; cursor: pointer; active: overview and not sharing and 9 < pc.n.3; label: "Workspace 10"; role: item }
         }
     }
-    on drag pcard.0.3 while pdrag.s < 0 {
+    on drag pcard.0.3 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 3
         pdrag.k = 0
     }
@@ -9959,7 +9964,7 @@ scene Session {
     }
     on release pcard.0.3 while pdrag.s == 3 and mon != 3 and 0 < win.used.3 { send workspace 1 on 3 to mon }
     on release pcard.0.3 { pdrag.s = -1 }
-    on drag pcard.1.3 while pdrag.s < 0 {
+    on drag pcard.1.3 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 3
         pdrag.k = 1
     }
@@ -9969,7 +9974,7 @@ scene Session {
     }
     on release pcard.1.3 while pdrag.s == 3 and mon != 3 and 1 < win.used.3 { send workspace 2 on 3 to mon }
     on release pcard.1.3 { pdrag.s = -1 }
-    on drag pcard.2.3 while pdrag.s < 0 {
+    on drag pcard.2.3 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 3
         pdrag.k = 2
     }
@@ -9979,7 +9984,7 @@ scene Session {
     }
     on release pcard.2.3 while pdrag.s == 3 and mon != 3 and 2 < win.used.3 { send workspace 3 on 3 to mon }
     on release pcard.2.3 { pdrag.s = -1 }
-    on drag pcard.3.3 while pdrag.s < 0 {
+    on drag pcard.3.3 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 3
         pdrag.k = 3
     }
@@ -9989,7 +9994,7 @@ scene Session {
     }
     on release pcard.3.3 while pdrag.s == 3 and mon != 3 and 3 < win.used.3 { send workspace 4 on 3 to mon }
     on release pcard.3.3 { pdrag.s = -1 }
-    on drag pcard.4.3 while pdrag.s < 0 {
+    on drag pcard.4.3 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 3
         pdrag.k = 4
     }
@@ -9999,7 +10004,7 @@ scene Session {
     }
     on release pcard.4.3 while pdrag.s == 3 and mon != 3 and 4 < win.used.3 { send workspace 5 on 3 to mon }
     on release pcard.4.3 { pdrag.s = -1 }
-    on drag pcard.5.3 while pdrag.s < 0 {
+    on drag pcard.5.3 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 3
         pdrag.k = 5
     }
@@ -10009,7 +10014,7 @@ scene Session {
     }
     on release pcard.5.3 while pdrag.s == 3 and mon != 3 and 5 < win.used.3 { send workspace 6 on 3 to mon }
     on release pcard.5.3 { pdrag.s = -1 }
-    on drag pcard.6.3 while pdrag.s < 0 {
+    on drag pcard.6.3 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 3
         pdrag.k = 6
     }
@@ -10019,7 +10024,7 @@ scene Session {
     }
     on release pcard.6.3 while pdrag.s == 3 and mon != 3 and 6 < win.used.3 { send workspace 7 on 3 to mon }
     on release pcard.6.3 { pdrag.s = -1 }
-    on drag pcard.7.3 while pdrag.s < 0 {
+    on drag pcard.7.3 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 3
         pdrag.k = 7
     }
@@ -10029,7 +10034,7 @@ scene Session {
     }
     on release pcard.7.3 while pdrag.s == 3 and mon != 3 and 7 < win.used.3 { send workspace 8 on 3 to mon }
     on release pcard.7.3 { pdrag.s = -1 }
-    on drag pcard.8.3 while pdrag.s < 0 {
+    on drag pcard.8.3 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 3
         pdrag.k = 8
     }
@@ -10039,7 +10044,7 @@ scene Session {
     }
     on release pcard.8.3 while pdrag.s == 3 and mon != 3 and 8 < win.used.3 { send workspace 9 on 3 to mon }
     on release pcard.8.3 { pdrag.s = -1 }
-    on drag pcard.9.3 while pdrag.s < 0 {
+    on drag pcard.9.3 while pdrag.s < 0 and (abs(drag.dx) > 6 or abs(drag.dy) > 6) {
         pdrag.s = 3
         pdrag.k = 9
     }
