@@ -118,7 +118,7 @@ impl Here {
         };
         match found.as_slice() {
             [(k, w, a)] => Ok((*k, w, *a, layer_of(w.pid, &self.layers))),
-            [] if name.parse::<usize>().is_ok() => Err(format!("window {name} isn't wired to yours. Ask the person to wire them: on a canvas (Super+Shift+W), drag the drop at the start of one's title bar to the other.")),
+            [] if name.parse::<usize>().is_ok() => Err(format!("window {name} isn't wired to yours. Ask the person to wire them: on a free monitor (Super+W), drag the drop at the start of one's title bar onto the other.")),
             [] => Err(format!("no window wired to yours is «{name}». `pleamar-wm link list` says which are.")),
             _ => Err(format!("more than one window wired to yours is «{name}»: name it by its number (`pleamar-wm link list`).")),
         }
@@ -184,14 +184,23 @@ fn keys(id: i32, names: &str) -> Result<(), String> {
     }
 }
 
-/// Done with what it was doing: its agent shows it is ready (✳), or —no
-/// agent's title to go by— nothing has come out of it for a while.
+/// Done with what it was doing: its agent says so through its hooks, or
+/// shows it is ready (✳), or —no title to go by— nothing has come out of it
+/// for a while.
 fn at_rest(i: &Info) -> bool {
+    if let Some(h) = i.get("hook").filter(|h| !h.is_empty()) {
+        return h == "done";
+    }
     match i.get("state").map(String::as_str) {
         Some("idle") => true,
         Some("working") => false,
         _ => i.get("quiet").and_then(|q| q.parse::<u64>().ok()).is_some_and(|q| q > 4000),
     }
+}
+
+thread_local! {
+    /// How many answers the target's hooks had told when the task was handed.
+    static HANDED: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
 }
 
 /// How a wait ended.
@@ -207,8 +216,21 @@ enum Waited {
 }
 
 /// The question on that terminal's screen, if its agent is not working.
+/// Its hooks may say it asks before the screen can be read as a question.
 fn asked(id: i32, i: &Info) -> Option<crate::term::Question> {
-    (i.get("state").map(String::as_str) != Some("working")).then(|| crate::term::question(&read(id, 40))).flatten()
+    let hook = i.get("hook").map(String::as_str).unwrap_or("");
+    if hook == "working" || (hook.is_empty() && i.get("state").map(String::as_str) == Some("working")) {
+        return None;
+    }
+    let screen = read(id, 40);
+    crate::term::question(&screen).or_else(|| (hook == "asking").then(|| crate::term::Question { text: format!("it asks its person something its screen shows: {}", screen.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("").trim()), options: Vec::new(), cursor: 0, yes_no: false }))
+}
+
+/// How many answers its hooks have told its layer, and the last one.
+fn hooked_answer(id: i32) -> (u64, String) {
+    let text = crate::term::ask(&socket(id), "answer").unwrap_or_default();
+    let (n, rest) = text.split_once('\n').unwrap_or((text.as_str(), ""));
+    (n.trim().parse().unwrap_or(0), rest.trim_end().to_owned())
 }
 
 /// Waits for that terminal to be done —at rest twice in a row, asking
@@ -266,6 +288,12 @@ fn said(slot: usize, q: &crate::term::Question) -> String {
 /// says what it is (the last one, if it handed several), or since a reading
 /// `before` had that many lines.
 fn since(id: i32, before: usize) -> String {
+    if let Some(n) = HANDED.with(|h| h.get()) {
+        let (now, text) = hooked_answer(id);
+        if now > n && !text.is_empty() {
+            return text;
+        }
+    }
     let all = read(id, 2000);
     let lines: Vec<&str> = all.lines().collect();
     let from = match lines.iter().rposition(|l| l.contains("through a wire]")) {
@@ -346,6 +374,11 @@ pub fn run(args: &[String]) -> i32 {
 
 const USAGE: &str = "pleamar-wm link — the windows wired to yours (on a canvas, the person wires them)
   whoami                          which window you are, and what is wired to it
+  spawn AGENT TASK [--folder D] [--name NAME]
+                                  a new terminal beside yours, wired to it, with that agent
+                                  (claude, codex…) started and TASK handed to it
+  setup [--yes] [--undo]          lets your agents use wires by themselves: the skill, the MCP
+                                  server (`link mcp`) for Claude Code and Codex, Claude's hooks
   label N NAME                    names the wire to N («tests»): shown on it, and N can be NAME
   list                            the windows wired to yours: number, title, what runs there
   read N [LINES]                  the last lines of its terminal (200)
@@ -364,7 +397,13 @@ const USAGE: &str = "pleamar-wm link — the windows wired to yours (on a canvas
 N is a window's number from `list`, its wire's name (`tests`), or the agent that runs there
 (`codex`) if only one is.";
 
-fn go(args: &[String]) -> Result<String, String> {
+/// Which window the caller is and what is wired to it: what an agent is told
+/// when it starts (`link mcp`).
+pub(crate) fn briefing() -> Result<String, String> {
+    go(&["whoami".to_owned()])
+}
+
+pub(crate) fn go(args: &[String]) -> Result<String, String> {
     let verb = args.first().map(String::as_str).unwrap_or("");
     let rest = args.get(1..).unwrap_or(&[]);
     match verb {
@@ -388,7 +427,7 @@ fn go(args: &[String]) -> Result<String, String> {
             let h = here()?;
             let wired = h.wired();
             if wired.is_empty() {
-                return Ok("No window is wired to yours. The person wires them: on a canvas (Super+Shift+W), dragging the drop at the start of a window's title bar to another window.".into());
+                return Ok("No window is wired to yours. The person wires them: on a free monitor (Super+W), dragging the drop at the start of a window's title bar onto another window.".into());
             }
             Ok(wired.iter().map(|(k, w, _)| line_of(w.slot, w, layer_of(w.pid, &h.layers).as_ref(), h.label(*k))).collect::<Vec<_>>().join("\n"))
         }
@@ -468,6 +507,7 @@ fn go(args: &[String]) -> Result<String, String> {
                     let me = h.wins.iter().find(|w| w.slot == h.slot).map(|w| w.title.clone()).unwrap_or_default();
                     let who = h.info.get("agent").filter(|a| !a.is_empty()).cloned().unwrap_or_else(|| "a shell".into());
                     let before = read(id, 2000).lines().count();
+                    HANDED.with(|c| c.set(Some(hooked_answer(id).0)));
                     // The drop runs along the wire, towards it, while it works.
                     flow(k, if mine_is_a { 1 } else { -1 });
                     // A line that says what this is, as a paste of its own (a long
@@ -512,7 +552,7 @@ fn go(args: &[String]) -> Result<String, String> {
                     // answer into this terminal when it is there.
                     let me_exe = std::env::current_exe().map_err(|e| e.to_string())?;
                     let mut c = std::process::Command::new("setsid");
-                    c.arg("-f").arg(me_exe).args(["link", "_deliver", &id.to_string(), &h.layer.to_string(), &k.to_string(), &(mine_is_a as u8).to_string(), &before.to_string(), &timeout.to_string(), &w.slot.to_string()]);
+                    c.arg("-f").arg(me_exe).args(["link", "_deliver", &id.to_string(), &h.layer.to_string(), &k.to_string(), &(mine_is_a as u8).to_string(), &before.to_string(), &timeout.to_string(), &w.slot.to_string(), &HANDED.with(|c| c.get()).unwrap_or(u64::MAX).to_string()]);
                     c.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
                     c.spawn().map_err(|e| e.to_string())?;
                     Ok(format!("Handed to window {} «{}». Its answer will be typed into this terminal when it is done; or `pleamar-wm link wait {}`.", w.slot, w.title, w.slot))
@@ -523,6 +563,7 @@ fn go(args: &[String]) -> Result<String, String> {
         "_deliver" => {
             let n = |i: usize| rest.get(i).and_then(|v| v.parse::<i64>().ok()).unwrap_or(0);
             let (id, mine, k, mine_is_a, before, timeout, slot) = (n(0) as i32, n(1) as i32, n(2) as usize, n(3) == 1, n(4) as usize, n(5) as u64, n(6));
+            HANDED.with(|c| c.set(rest.get(7).and_then(|v| v.parse().ok())));
             let deadline = Instant::now() + Duration::from_secs(timeout);
             let mut told = String::new();
             let done = loop {
@@ -549,8 +590,269 @@ fn go(args: &[String]) -> Result<String, String> {
             tell(mine, &head, &answer)?;
             Ok(String::new())
         }
+        "mcp" => {
+            crate::mcp::run();
+            Ok(String::new())
+        }
+        "hook" => {
+            hook(rest.first().map_or("", String::as_str));
+            Ok(String::new())
+        }
+        "setup" => setup(rest.iter().any(|a| a == "--yes"), rest.iter().any(|a| a == "--undo")),
+        "spawn" => spawn(rest),
         _ => Err(USAGE.into()),
     }
+}
+
+/// `link hook claude`: what Claude Code's hooks say (JSON on stdin), told to
+/// the layer of the terminal it runs in —how it is, and its last answer,
+/// exactly—. Quiet and quick whatever happens: it never holds the agent.
+fn hook(agent: &str) {
+    let Some(layer) = std::env::var("PLEAMAR_TERMINAL").ok().filter(|v| !v.is_empty()) else { return };
+    let mut input = String::new();
+    let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut input);
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&input) else { return };
+    let event = v.get("hook_event_name").and_then(|e| e.as_str()).unwrap_or("");
+    let state = match (agent, event) {
+        (_, "UserPromptSubmit" | "PreToolUse" | "PostToolUse") => "working",
+        (_, "PermissionRequest") => "asking",
+        (_, "Notification") => match v.get("notification_type").and_then(|t| t.as_str()).unwrap_or("") {
+            "permission_prompt" | "elicitation_dialog" | "agent_needs_input" => "asking",
+            "idle_prompt" => "done",
+            _ => return,
+        },
+        (_, "Stop" | "SessionStart") => "done",
+        _ => return,
+    };
+    let sock = format!("{}/{layer}.sock", crate::term::socket_dir());
+    let _ = crate::term::ask(&sock, &format!("note state {state}"));
+    if event == "Stop" {
+        if let Some(text) = v.get("last_assistant_message").and_then(|t| t.as_str()).filter(|t| !t.trim().is_empty()) {
+            let _ = crate::term::ask(&sock, &format!("note answer {}", hex(text.as_bytes())));
+        }
+    }
+}
+
+/// The skill that tells an agent about wires, for each agent installed.
+const SKILL: &str = include_str!("../skill/pleamar-link/SKILL.md");
+
+/// The events Claude Code tells its hooks of, that say how it is.
+const CLAUDE_EVENTS: [&str; 7] = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PermissionRequest", "Notification", "Stop"];
+const HOOK: &str = "pleamar-wm link hook claude";
+
+/// `link setup`: what lets the agents use wires by themselves —the skill,
+/// the MCP server (`link mcp`) for Claude Code and Codex, and Claude Code's
+/// hooks (exact state and answers)—. Says what it will change and asks
+/// first (`--yes` does not); `--undo` takes it all away.
+fn setup(yes: bool, undo: bool) -> Result<String, String> {
+    let home = std::env::var("HOME").map_err(|_| "no HOME")?;
+    let has = |p: &str| std::path::Path::new(&format!("{home}/{p}")).is_dir();
+    let on_path = |c: &str| std::env::var_os("PATH").is_some_and(|p| std::env::split_paths(&p).any(|d| d.join(c).is_file()));
+    let claude = has(".claude") && on_path("claude");
+    let codex = has(".codex") && on_path("codex");
+    let mut plan: Vec<String> = Vec::new();
+    for (ok, dir) in [(has(".claude"), ".claude/skills/pleamar-link"), (has(".codex"), ".codex/skills/pleamar-link")] {
+        if ok {
+            plan.push(format!("{} the skill ~/{dir}/SKILL.md", if undo { "remove" } else { "write" }));
+        }
+    }
+    if claude {
+        plan.push(format!("{} the MCP server «pleamar-link» in Claude Code (user scope): `claude mcp {}`", if undo { "remove" } else { "register" }, if undo { "remove" } else { "add" }));
+        plan.push(format!("{} Claude Code's hooks for wires in ~/.claude/settings.json (a copy of it is kept as settings.json.before-pleamar-link)", if undo { "take away" } else { "add" }));
+    }
+    if codex {
+        plan.push(format!("{} the MCP server «pleamar-link» in Codex: `codex mcp {}`", if undo { "remove" } else { "register" }, if undo { "remove" } else { "add" }));
+    }
+    if plan.is_empty() {
+        return Err("no agent found to set up (Claude Code: ~/.claude and `claude`; Codex: ~/.codex and `codex`)".into());
+    }
+    println!("pleamar-wm link setup will:\n  - {}", plan.join("\n  - "));
+    if !yes {
+        use std::io::IsTerminal;
+        if !std::io::stdin().is_terminal() {
+            return Err("run it in a terminal to answer, or with --yes".into());
+        }
+        print!("Go ahead? [y/N] ");
+        let _ = std::io::Write::flush(&mut std::io::stdout());
+        let mut a = String::new();
+        let _ = std::io::stdin().read_line(&mut a);
+        if !matches!(a.trim(), "y" | "Y" | "s" | "S" | "yes" | "si" | "sí") {
+            return Ok("nothing changed".into());
+        }
+    }
+    let mut done: Vec<String> = Vec::new();
+    for (ok, dir) in [(has(".claude"), format!("{home}/.claude/skills/pleamar-link")), (has(".codex"), format!("{home}/.codex/skills/pleamar-link"))] {
+        if !ok {
+            continue;
+        }
+        if undo {
+            let _ = std::fs::remove_file(format!("{dir}/SKILL.md"));
+            let _ = std::fs::remove_dir(&dir);
+        } else {
+            std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(format!("{dir}/SKILL.md"), SKILL)).map_err(|e| format!("{dir}: {e}"))?;
+        }
+        done.push(format!("skill {dir}"));
+    }
+    let quiet = |c: &mut std::process::Command| c.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status().is_ok_and(|s| s.success());
+    if claude {
+        quiet(std::process::Command::new("claude").args(["mcp", "remove", "--scope", "user", "pleamar-link"]));
+        if !undo {
+            if !quiet(std::process::Command::new("claude").args(["mcp", "add", "--scope", "user", "pleamar-link", "--", "pleamar-wm", "link", "mcp"])) {
+                return Err("`claude mcp add` did not go through".into());
+            }
+        }
+        done.push("Claude Code's MCP server".into());
+        claude_hooks(&format!("{home}/.claude/settings.json"), undo)?;
+        done.push("Claude Code's hooks".into());
+    }
+    if codex {
+        quiet(std::process::Command::new("codex").args(["mcp", "remove", "pleamar-link"]));
+        if !undo && !quiet(std::process::Command::new("codex").args(["mcp", "add", "pleamar-link", "--", "pleamar-wm", "link", "mcp"])) {
+            return Err("`codex mcp add` did not go through".into());
+        }
+        done.push("Codex's MCP server".into());
+    }
+    Ok(format!(
+        "{}: {}.{}",
+        if undo { "taken away" } else { "set up" },
+        done.join(", "),
+        if undo { "" } else { " Agents started from now on know about wires; restart the ones already open." }
+    ))
+}
+
+/// Claude Code's settings, with this program's hooks for wires in them (or
+/// without, `undo`): every other setting and hook as it was.
+fn claude_hooks(path: &str, undo: bool) -> Result<(), String> {
+    use serde_json::{json, Value};
+    let text = std::fs::read_to_string(path).unwrap_or_else(|_| "{}".into());
+    let mut v: Value = serde_json::from_str(&text).map_err(|e| format!("{path} is not JSON I can read ({e}): nothing changed"))?;
+    if std::path::Path::new(path).exists() && !std::path::Path::new(&format!("{path}.before-pleamar-link")).exists() {
+        std::fs::copy(path, format!("{path}.before-pleamar-link")).map_err(|e| e.to_string())?;
+    }
+    let root = v.as_object_mut().ok_or("settings.json is not an object")?;
+    let hooks = root.entry("hooks").or_insert_with(|| json!({}));
+    let hooks = hooks.as_object_mut().ok_or("its hooks are not an object")?;
+    for event in CLAUDE_EVENTS {
+        let list = hooks.entry(event).or_insert_with(|| json!([]));
+        let Some(list) = list.as_array_mut() else { continue };
+        // Ours out first (any left from before), then in again unless undone.
+        list.retain(|g| !g.get("hooks").and_then(Value::as_array).is_some_and(|hs| hs.iter().any(|h| h.get("command").and_then(Value::as_str) == Some(HOOK))));
+        if !undo {
+            list.push(json!({ "hooks": [{ "type": "command", "command": HOOK, "timeout": 5 }] }));
+        }
+    }
+    hooks.retain(|_, l| l.as_array().is_none_or(|a| !a.is_empty()));
+    if hooks.is_empty() {
+        root.remove("hooks");
+    }
+    let out = serde_json::to_string_pretty(&v).map_err(|e| e.to_string())?;
+    std::fs::write(format!("{path}.new"), out + "\n").and_then(|_| std::fs::rename(format!("{path}.new"), path)).map_err(|e| format!("{path}: {e}"))
+}
+
+/// A program the session starts as it starts its own: loose from the caller.
+fn start(exe: &str, cwd: &str) -> Result<u32, String> {
+    let mut c = std::process::Command::new(exe);
+    c.current_dir(cwd).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+    // Not as the caller's terminal: the new one gets a layer of its own.
+    c.env_remove("PLEAMAR_TERMINAL").env_remove("PLEAMAR_TTY");
+    use std::os::unix::process::CommandExt;
+    c.process_group(0);
+    c.spawn().map(|ch| ch.id()).map_err(|e| format!("{exe}: {e}"))
+}
+
+/// A terminal opened for an agent: the same program as the caller's (kitty,
+/// Alacritty…), in that folder. Its window's place and its layer, once both
+/// are there.
+fn open_terminal(exe: &str, cwd: &str) -> Result<(usize, i32), String> {
+    let before: Vec<usize> = windows()?.iter().map(|w| w.slot).collect();
+    let pid = start(exe, cwd)?;
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(300));
+        let wins = windows()?;
+        // Its own window, or —a terminal that hands windows to a server of
+        // its own— the new one that opened.
+        let new = wins.iter().find(|w| w.pid == pid).or_else(|| wins.iter().find(|w| !before.contains(&w.slot)));
+        let Some(w) = new else { continue };
+        if let Some((id, _)) = layer_of(w.pid, &crate::term::layers()) {
+            return Ok((w.slot, id));
+        }
+    }
+    Err(format!("{exe} opened no window with a terminal of its own in 20 s"))
+}
+
+/// `link spawn AGENT TASK [--folder D] [--name L]`: a new terminal beside the
+/// caller's window, wired to it, with that agent started, and the task
+/// handed as with `delegate`.
+fn spawn(rest: &[String]) -> Result<String, String> {
+    let agent = rest.first().ok_or("spawn AGENT TASK [--folder DIR] [--name NAME]")?.to_lowercase();
+    let flag = |f: &str| rest.iter().position(|a| a == f).and_then(|p| rest.get(p + 1)).cloned();
+    let mut words: Vec<&str> = Vec::new();
+    let mut skip = false;
+    for a in &rest[1..] {
+        if skip {
+            skip = false;
+            continue;
+        }
+        if a == "--folder" || a == "--name" {
+            skip = true;
+            continue;
+        }
+        words.push(a);
+    }
+    let task = words.join(" ");
+    if task.is_empty() {
+        return Err("spawn AGENT TASK [--folder DIR] [--name NAME]".into());
+    }
+    let command = match agent.as_str() {
+        "claude" | "claude-code" => "claude",
+        "codex" => "codex",
+        "gemini" => "gemini",
+        "opencode" => "opencode",
+        "qwen" => "qwen",
+        "copilot" => "copilot",
+        other => return Err(format!("«{other}»: claude, codex, gemini, opencode, qwen or copilot")),
+    };
+    let h = here()?;
+    let cwd = flag("--folder").map(|f| f.replacen('~', &std::env::var("HOME").unwrap_or_default(), 1)).unwrap_or_else(|| h.info.get("cwd").cloned().unwrap_or_else(|| ".".into()));
+    let terminal = h.info.get("terminal").and_then(|t| t.parse::<u32>().ok()).ok_or("this terminal's program is not known")?;
+    let exe = std::fs::read_link(format!("/proc/{terminal}/exe")).map(|p| p.display().to_string()).map_err(|e| format!("this terminal's program: {e}"))?;
+    let (slot, id) = open_terminal(&exe, &cwd)?;
+    // Beside the caller's window, on the plane, as big.
+    let place: Vec<f64> = say(&[format!("get fx.{}", h.slot), format!("get fy.{}", h.slot), format!("get fw.{}", h.slot), format!("get fh.{}", h.slot)]).iter().filter_map(|v| v.trim().parse().ok()).collect();
+    if let [x, y, w, hh] = place[..] {
+        if w > 1.0 {
+            say(&[format!("fact fx.{slot} {}", x + w + 40.0), format!("fact fy.{slot} {y}"), format!("fact fw.{slot} {w}"), format!("fact fh.{slot} {hh}")]);
+        }
+    }
+    // Wired, in the first free place.
+    let taken: Vec<f64> = say(&(0..8).map(|k| format!("get wire.{k}.a")).collect::<Vec<_>>()).iter().filter_map(|v| v.trim().parse().ok()).collect();
+    let k = taken.iter().position(|a| *a < 0.0).ok_or("eight wires already: cut one first")?;
+    let mut orders = vec![format!("fact wire.{k}.a {}", h.slot), format!("fact wire.{k}.b {slot}")];
+    if let Some(name) = flag("--name") {
+        orders.push(format!("text wire.{k}.label {name}"));
+    }
+    say(&orders);
+    // The agent, and once it is ready, the task.
+    paste(id, command)?;
+    std::thread::sleep(Duration::from_millis(120));
+    keys(id, "enter")?;
+    let deadline = Instant::now() + Duration::from_secs(40);
+    loop {
+        std::thread::sleep(Duration::from_millis(600));
+        let i = info(id);
+        if let Some(q) = asked(id, &i).filter(|_| i.get("agent").is_some_and(|a| !a.is_empty())) {
+            return Ok(format!("Opened window {slot} with {command}, wired to yours; before your task it asks:\n{}\nAnswer it with link_answer, then hand it the task with link_delegate {slot}.", said(slot, &q)));
+        }
+        if i.get("agent").is_some_and(|a| !a.is_empty()) && at_rest(&i) && i.get("quiet").and_then(|q| q.parse::<u64>().ok()).is_some_and(|q| q > 1500) {
+            break;
+        }
+        if Instant::now() > deadline {
+            return Err(format!("opened window {slot} and started {command}, but it did not get ready in 40 s: hand it the task with link_delegate {slot} when it is"));
+        }
+    }
+    let handed = go(&["delegate".to_owned(), slot.to_string(), task])?;
+    Ok(format!("Opened window {slot} with {command} in {}, wired to yours. {handed}", tilde(&cwd)))
 }
 
 /// Into the asking agent's terminal, once it is free —not over its person

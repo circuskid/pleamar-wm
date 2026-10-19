@@ -160,6 +160,10 @@ struct Shared {
     shell: libc::pid_t,
     // When something last came out, in ms since the start.
     last_out: std::sync::atomic::AtomicU64,
+    // What the agent's hooks said (`link hook`): how it is, and its answers
+    // (how many, and the last one, exactly as it gave it).
+    hook: Mutex<String>,
+    answers: Mutex<(u64, String)>,
     started: std::time::Instant,
 }
 
@@ -238,6 +242,8 @@ fn layer(real: &str, args: &[std::ffi::OsString]) -> Result<(), String> {
             master,
             shell: child,
             last_out: std::sync::atomic::AtomicU64::new(0),
+            hook: Mutex::new(String::new()),
+            answers: Mutex::new((0, String::new())),
             started: std::time::Instant::now(),
         });
         let socket = format!("{}/{me}.sock", socket_dir());
@@ -504,7 +510,7 @@ fn answer(s: &Shared, mut c: std::os::unix::net::UnixStream) {
             let (pid, cmd, cwd) = foreground(s);
             let quiet = s.started.elapsed().as_millis() as u64 - s.last_out.load(std::sync::atomic::Ordering::Relaxed);
             format!(
-                "layer {}\nterminal {}\nshell {}\nforeground {pid}\ncommand {cmd}\ncwd {cwd}\nagent {}\ntitle {title}\nstate {}\nsize {cols}x{rows}\nfullscreen {}\nbells {bells}\nquiet {quiet}\n",
+                "layer {}\nterminal {}\nshell {}\nforeground {pid}\ncommand {cmd}\ncwd {cwd}\nagent {}\ntitle {title}\nstate {}\nsize {cols}x{rows}\nfullscreen {}\nbells {bells}\nquiet {quiet}\nhook {}\nanswers {}\n",
                 // SAFETY: plain questions about this process.
                 unsafe { libc::getpid() },
                 unsafe { libc::getppid() },
@@ -512,6 +518,9 @@ fn answer(s: &Shared, mut c: std::os::unix::net::UnixStream) {
                 agent_of(&cmd).unwrap_or(""),
                 state_of(&title),
                 alt as u8,
+                // (Only while the agent its hooks spoke for still runs.)
+                if agent_of(&cmd).is_some() { s.hook.lock().map(|h| h.clone()).unwrap_or_default() } else { String::new() },
+                s.answers.lock().map(|a| a.0).unwrap_or(0),
             )
         }
         "read" => {
@@ -558,6 +567,27 @@ fn answer(s: &Shared, mut c: std::os::unix::net::UnixStream) {
                 }
             }
         }
+        // What the agent's hooks say: `note state working|asking|done`, `note answer HEX`.
+        "note" => match rest.split_once(' ') {
+            Some(("state", v)) => {
+                if let Ok(mut h) = s.hook.lock() {
+                    *h = v.trim().to_owned();
+                }
+                "ok\n".into()
+            }
+            Some(("answer", v)) => match hex(v.trim()) {
+                Some(b) => {
+                    if let Ok(mut a) = s.answers.lock() {
+                        *a = (a.0 + 1, String::from_utf8_lossy(&b).into_owned());
+                    }
+                    "ok\n".into()
+                }
+                None => "error: note answer HEX\n".into(),
+            },
+            _ => "error: note state S | note answer HEX\n".into(),
+        },
+        // How many answers the hooks told, and the last one.
+        "answer" => s.answers.lock().map(|a| format!("{}\n{}", a.0, a.1)).unwrap_or_default(),
         _ => "error: info, read N, paste HEX, keys NAME…\n".into(),
     };
     let _ = c.write_all(reply.as_bytes());
@@ -733,8 +763,11 @@ pub fn watch_agents(windows: String, to_render: std::sync::mpsc::Sender<pleamar:
                 let agent = info.get("agent").cloned().unwrap_or_default();
                 let cwd = info.get("cwd").cloned().unwrap_or_default();
                 let cwd = if !home.is_empty() && cwd.starts_with(&home) { format!("~{}", &cwd[home.len()..]) } else { cwd };
-                let working = info.get("state").map(String::as_str) == Some("working");
-                let state = if working {
+                let hook = info.get("hook").map(String::as_str).unwrap_or("");
+                let working = if hook.is_empty() { info.get("state").map(String::as_str) == Some("working") } else { hook == "working" };
+                let state = if hook == "asking" {
+                    3
+                } else if working {
                     1
                 } else if ask(&format!("{folder}/{id}.sock"), "read 40").is_ok_and(|s| question(&s).is_some()) {
                     3

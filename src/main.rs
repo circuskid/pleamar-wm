@@ -23,6 +23,7 @@ mod screen;
 mod session;
 mod term;
 mod link;
+mod mcp;
 
 fn main() {
     // Called as the user's shell (the session's `SHELL`): the layer between

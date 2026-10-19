@@ -53,6 +53,14 @@ the open windows without closing anything.
   whether it works, is ready or waits for you (its edge goes amber); zoomed
   out, a canvas shows it big over each window, and one waiting out of sight
   leaves a drop at the monitor's edge that takes the camera there.
+- **Agents that know about wires** (0.4.6): `pleamar-wm link setup` (it says
+  what it changes and asks) installs a skill for Claude Code and Codex,
+  registers `pleamar-wm link mcp` as their MCP server —tools of their own
+  (`link_delegate`, `link_ask`, `link_answer`, `link_spawn`…), and on start
+  they are told which window they are and what is wired to them— and adds
+  Claude Code's hooks, which tell its terminal exactly how it is and its last
+  answer. `link spawn codex "TASK"` opens a terminal with that agent beside
+  yours, wired, and hands it the task. `link setup --undo` takes it away.
 - **Every terminal readable and writable from outside** (0.4.6): in a session,
   the terminals it starts —kitty, Alacritty, foot, Konsole, any that runs
   `$SHELL`— run the user's shell through a thin layer of pleamar-wm's own,
