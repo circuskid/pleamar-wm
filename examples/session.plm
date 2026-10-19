@@ -398,6 +398,22 @@ scene Session {
         ellipse { at: lx, ly; radius: 420; color: #9ed6bd }
     }
 
+    // ── wires, on a canvas: which windows are wired to each other —both
+    // ways, up to eight—. A wire is what lets an agent in one of them read,
+    // type in and hand tasks to the other (`pleamar-wm link`); `flow` is
+    // what goes along it now: 1 from a to b, -1 back, 0 nothing. ──
+    repeat k in 0..8 {
+        fact wire.$k.a = -1
+        fact wire.$k.b = -1
+        fact wire.$k.flow = 0
+    }
+    fact wiring = -1                     // the window whose port is being dragged
+    fact wtgt = -1                       // the one under the mouse meanwhile
+    fact wnew.a = -1
+    fact wnew.b = -1
+    prop wnew.go = 0 ~0ms                // a frame later, it is put in place
+    fact wgone = -1
+    fact wgone.n = 0
     // ── the canvas's plane, under the windows: a faint grid of it, that
     // moves and comes closer with the camera; and the empty plane, dragged,
     // moves about, the wheel (Super and the wheel, over a window) zooms
@@ -10166,6 +10182,11 @@ scene Session {
         fact fw.$i = 0
         fact fh.$i = 0
         fact maxed.$i = 0
+        // Its agent, if one runs in it (a terminal through the layer, term.rs,
+        // says so): 0 none, 1 working, 2 ready, 3 waiting for the person; and
+        // what and where («claude · ~/Proyectos/pleamar»).
+        fact ag.$i = 0
+        text agt.$i = ""
         fact stamp.$i = 0
         // Which monitor its free place was made on: monitors differ in size,
         // so a place from the other one is not a place here.
@@ -10297,6 +10318,9 @@ scene Session {
         // says where each one is, and the program has all of its tile. It
         // unrolls when the monitor goes free, and rolls up when it goes back.
         prop hb.$i = 0 ~glide
+        // (On a canvas, room for its port at the start of its title bar.)
+        prop cvpt.$i = 0 ~glide
+        follow cvpt.$i = if(C and fr and ours, 1, 0)
         // Carried at a glance over the cards, it shrinks towards them.
         prop ovcarry.$i = 0 ~pop
         follow ovcarry.$i = if(ovdrag == i and on.col, 1, 0)
@@ -10481,7 +10505,10 @@ scene Session {
             // above it, which takes nothing from the program.
             // With Super held, all of it.
             let whole = keys.super > 0.5 or dragging == i
-            zone box title.$i { from: x.$i + if(whole or F > 0.5, 0, 12), y.$i - if(whole or F > 0.5, 0, gap - 1); size: if(whole, w, if(F > 0.5, w - 76, w - 24)), if(whole, h, if(F > 0.5, tb, gap - 2)); cursor: pointer; active: here and not overview and not win.$i.dialog and (ours or F < 0.5 or whole or win.$i.held > 0.5); label: "{win.$i.title}"; role: button; handle: i }
+            zone box title.$i { from: x.$i + if(whole or F > 0.5, 0, 12), y.$i - if(whole or F > 0.5, 0, gap - 1); size: if(whole, w, if(F > 0.5, w - 76, w - 24)), if(whole, h, if(F > 0.5, tb, gap - 2)); cursor: pointer; active: here and not overview and not win.$i.dialog and (ours or F < 0.5 or whole or win.$i.held > 0.5) and wiring < 0; label: "{win.$i.title}"; role: button; handle: i }
+            // On a canvas, its port: a drop on its title bar, dragged to another
+            // window to wire the two.
+            zone ellipse port.$i { at: x + 18, y + tb / 2; radius: 9; cursor: grab; active: here and not overview and C and fr and ours and not win.$i.dialog; label: "Wire {win.$i.title} to another window"; role: button }
             zone ellipse lead_zone.$i { at: x + w - 40, y + tb / 2; radius: 10; cursor: pointer; active: here and not overview and not win.$i.dialog and ours; label: "Enlarge {win.$i.title}" }
             zone ellipse mini_zone.$i { at: x + w - 60, y + tb / 2; radius: 10; cursor: pointer; active: here and not overview and not win.$i.dialog and Fm > 0.5 and ours; label: "Minimize {win.$i.title}" }
             zone ellipse close_zone.$i { at: x + w - 20, y + tb / 2; radius: 10; cursor: pointer; active: here and not overview and not win.$i.dialog and ours; label: "Close {win.$i.title}" }
@@ -10538,7 +10565,7 @@ scene Session {
                 shader: tide, water while water < 0.999
                 clip box { from: x, y; size: w, h; corner: 12 }
                 box { from: x, y; size: w, tb * hb.$i; color: mix(#1a1e22, #1d2b27, lit.$i); show: hb.$i > 0.01 }
-                text win.$i.title { at: x + 14, y + tb / 2 - tb * (1 - hb.$i); anchor: left center; size: 12; weight: 500; width: max(w - 110, 10); lines: 1; color: ink; opacity: (55% + 45% * lit.$i) * hb.$i; show: hb.$i > 0.01 }
+                text win.$i.title { at: x + 14 + 24 * cvpt.$i, y + tb / 2 - tb * (1 - hb.$i); anchor: left center; size: 12; weight: 500; width: max(w - 110 - 24 * cvpt.$i - 170 * (ag.$i > 0.5) * (w > 400) * hb.$i, 10); lines: 1; color: ink; opacity: (55% + 45% * lit.$i) * hb.$i; show: hb.$i > 0.01 }
                 window win.$i { at: x, y + tb * hb.$i; size: w, max(h - tb * hb.$i, 1); ask: ask.w, ask.h - tb * ours; show: drawn and not win.$i.fullscreen and wet <= 0.001 and cold <= 0.001 }
             }
             // The same, in the rain: the window seen through wet glass.
@@ -10547,7 +10574,7 @@ scene Session {
                 shader: rain, wet * pour
                 clip box { from: x, y; size: w, h; corner: 12 }
                 box { from: x, y; size: w, tb * hb.$i; color: mix(#1a1e22, #1d2b27, lit.$i); show: hb.$i > 0.01 }
-                text win.$i.title { at: x + 14, y + tb / 2 - tb * (1 - hb.$i); anchor: left center; size: 12; weight: 500; width: max(w - 110, 10); lines: 1; color: ink; opacity: (55% + 45% * lit.$i) * hb.$i; show: hb.$i > 0.01 }
+                text win.$i.title { at: x + 14 + 24 * cvpt.$i, y + tb / 2 - tb * (1 - hb.$i); anchor: left center; size: 12; weight: 500; width: max(w - 110 - 24 * cvpt.$i - 170 * (ag.$i > 0.5) * (w > 400) * hb.$i, 10); lines: 1; color: ink; opacity: (55% + 45% * lit.$i) * hb.$i; show: hb.$i > 0.01 }
                 window win.$i { at: x, y + tb * hb.$i; size: w, max(h - tb * hb.$i, 1); ask: ask.w, ask.h - tb * ours; show: drawn and not win.$i.fullscreen and wet > 0.001 }
             }
             // And in the snow: frosted glass with snow on top.
@@ -10556,7 +10583,7 @@ scene Session {
                 shader: snow, cold
                 clip box { from: x, y; size: w, h; corner: 12 }
                 box { from: x, y; size: w, tb * hb.$i; color: mix(#1a1e22, #1d2b27, lit.$i); show: hb.$i > 0.01 }
-                text win.$i.title { at: x + 14, y + tb / 2 - tb * (1 - hb.$i); anchor: left center; size: 12; weight: 500; width: max(w - 110, 10); lines: 1; color: ink; opacity: (55% + 45% * lit.$i) * hb.$i; show: hb.$i > 0.01 }
+                text win.$i.title { at: x + 14 + 24 * cvpt.$i, y + tb / 2 - tb * (1 - hb.$i); anchor: left center; size: 12; weight: 500; width: max(w - 110 - 24 * cvpt.$i - 170 * (ag.$i > 0.5) * (w > 400) * hb.$i, 10); lines: 1; color: ink; opacity: (55% + 45% * lit.$i) * hb.$i; show: hb.$i > 0.01 }
                 window win.$i { at: x, y + tb * hb.$i; size: w, max(h - tb * hb.$i, 1); ask: ask.w, ask.h - tb * ours; show: drawn and not win.$i.fullscreen and cold > 0.001 and wet <= 0.001 }
             }
             // (The wave: two soft crests of light, the second behind the first.)
@@ -10612,6 +10639,74 @@ scene Session {
                 box { at: x + w - 20, by + 0.3; size: 7.5, 1.6; corner: 0.8; rotate: -45deg; color: #4a140b; opacity: close_zone.$i.hover }
             }
             box { from: x, y; size: w, h; corner: 12; stroke: 1.5; color: mint; opacity: lit.$i * 70% * (1 - ov) * smooth(0.75, 1, water) }
+            // ── on a canvas: its port, and its agent's state ──
+            // The port: a drop, fuller over it, while wiring from it, and once
+            // it has wires.
+            let nwired = (wire.0.a == i or wire.0.b == i) + (wire.1.a == i or wire.1.b == i) + (wire.2.a == i or wire.2.b == i) + (wire.3.a == i or wire.3.b == i) + (wire.4.a == i or wire.4.b == i) + (wire.5.a == i or wire.5.b == i) + (wire.6.a == i or wire.6.b == i) + (wire.7.a == i or wire.7.b == i)
+            group {
+                show: hb.$i > 0.01 and cvpt.$i > 0.01
+                opacity: cvpt.$i * hb.$i
+                ellipse { at: x + 18, y + tb / 2; radius: 6 + 2 * max(port.$i.hover, wiring == i); stroke: 1.2; color: mint; opacity: 35% + 50% * max(port.$i.hover, wiring == i) }
+                body {
+                    gradient: radial x + 17, y + tb / 2 - 1.5 radius 6, #e8fff5, mint 45%, #3f8f76
+                    rim: 35%
+                    ellipse { at: x + 18, y + tb / 2; radius: 2.6 + 1.4 * min(nwired, 1) + 1.2 * max(port.$i.hover, wiring == i) }
+                }
+            }
+            // Its agent: what and where, dim, and a little basin of water —low
+            // and still when ready, a wave running through it while it works,
+            // amber and full, beating, when it waits for you—.
+            let ag.lvl = pick(max(ag.$i - 1, 0), 6 + 1.5 * sin(time * 300), 3.5, 9.5)
+            group {
+                show: hb.$i > 0.01 and ag.$i > 0.5
+                opacity: hb.$i * if(ag.$i > 2.5, 0.75 + 0.25 * sin(time * 240), 1)
+                text agt.$i { at: x + w - 104, y + tb / 2; anchor: right center; size: 10.5; color: ink; opacity: 55%; width: min(150, w - 280); lines: 1; show: w > 400 }
+                group {
+                    clip box { from: x + w - 98, y + tb / 2 - 6; size: 14, 12; corner: 3.5 }
+                    box { from: x + w - 98, y + tb / 2 - 6 + 12 - ag.lvl * 1; size: 14, 12; color: if(ag.$i > 2.5, amber, mint); opacity: 85% }
+                    ellipse { at: x + w - 98 + 7 + 5 * sin(time * 260), y + tb / 2 - 6 + 12 - ag.lvl * 1; radius: 4; scale: 1.7, 0.45; color: #dffaf0; opacity: 70%; show: ag.$i > 0.5 and ag.$i < 1.5 }
+                }
+                box { from: x + w - 98, y + tb / 2 - 6; size: 14, 12; corner: 3.5; stroke: 1.2; color: if(ag.$i > 2.5, amber, mint); opacity: 85% }
+            }
+            // Waiting for you: its edge, amber, beating.
+            box { from: x, y; size: w, h; corner: 12; stroke: 2; color: amber; opacity: (50% + 30% * sin(time * 240)) * smooth(0.75, 1, water); show: ag.$i > 2.5 }
+            // Far away (a canvas zoomed out): what each agent is doing, big.
+            let ag.far = clamp((0.55 - cz) / 0.12, 0, 1) * C * (ag.$i > 0.5)
+            group {
+                show: ag.far > 0.01
+                opacity: ag.far
+                body {
+                    color: #0c0e10
+                    rim: 14%
+                    shadow: 0, 8, 22, 50%
+                    box { at: x + w / 2, y + h / 2; size: 190, 46; corner: 23 }
+                }
+                box { at: x + w / 2, y + h / 2; size: 190, 46; corner: 23; stroke: 1.5; color: if(ag.$i > 2.5, amber, mint); opacity: 60% }
+                group {
+                    clip box { from: x + w / 2 - 82, y + h / 2 - 12; size: 28, 24; corner: 7.0 }
+                    box { from: x + w / 2 - 82, y + h / 2 - 12 + 24 - ag.lvl * 2; size: 28, 24; color: if(ag.$i > 2.5, amber, mint); opacity: 85% }
+                    ellipse { at: x + w / 2 - 82 + 14 + 10 * sin(time * 260), y + h / 2 - 12 + 24 - ag.lvl * 2; radius: 8; scale: 1.7, 0.45; color: #dffaf0; opacity: 70%; show: ag.$i > 0.5 and ag.$i < 1.5 }
+                }
+                box { from: x + w / 2 - 82, y + h / 2 - 12; size: 28, 24; corner: 7.0; stroke: 2.4; color: if(ag.$i > 2.5, amber, mint); opacity: 85% }
+                text pick(max(ag.$i - 1, 0), "Working", "Ready", "Waiting for you") { at: x + w / 2 - 44, y + h / 2 - 6; anchor: left center; size: 14; weight: 650; color: ink }
+                text agt.$i { at: x + w / 2 - 44, y + h / 2 + 10; anchor: left center; size: 10; color: ink; opacity: 55%; width: 128; lines: 1 }
+            }
+            // Waiting for you out of sight (a canvas): a drop at the monitor's
+            // edge, towards it; pressed, the camera goes there.
+            let em.out = C and fr and ag.$i > 2.5 and (fgx + fgw / 2 < x0 or fgx + fgw / 2 > x0 + Ws or fgy + fgh / 2 < y0 or fgy + fgh / 2 > y0 + ah)
+            let em.x = clamp(fgx + fgw / 2, x0 + 34, x0 + Ws - 34)
+            let em.y = clamp(fgy + fgh / 2, y0 + 34, y0 + ah - 34)
+            group {
+                show: em.out
+                ellipse { at: em.x, em.y; radius: 15 + 5 * sin(time * 240); color: amber; opacity: 18% }
+                body {
+                    gradient: radial em.x - 2, em.y - 3 radius 12, #fff3d6, amber 45%, #a8781f
+                    rim: 35%
+                    shadow: 0, 4, 12, 45%
+                    ellipse { at: em.x, em.y; radius: 10 }
+                }
+                text "!" { at: em.x, em.y; anchor: center; size: 12; weight: 800; color: #3a2606 }
+            }
             // Tiled, where it is taken to carry it: a little bar in the gap
             // above it, seen when the mouse is there.
             box { at: x + w / 2, y - gap / 2; size: 40 + 24 * title.$i.hover, 4; corner: 2; color: ink; opacity: 55% * title.$i.hover * (1 - hb.$i); show: hb.$i < 0.99 }
@@ -10862,6 +10957,30 @@ scene Session {
         }
         // Let go on another one (the one under it, as the others showed).
         on release title.$i while over >= 0 and not crossing { swap win.$i with win(over) }
+        // Its port, dragged to another window: the two are wired (`wtgt` is
+        // the one under the mouse, found after the windows).
+        on press port.$i {
+            wiring = i
+            focus win.$i
+        }
+        on release port.$i while wtgt >= 0 and wtgt != i {
+            wnew.a = i
+            wnew.b = wtgt
+            wnew.go: 0 ~0ms
+            wnew.go: 1 after 16ms
+        }
+        on release port.$i {
+            wiring = -1
+            wtgt = -1
+        }
+        // Gone, its wires go with it.
+        on change win.$i.open while not win.$i.open {
+            wgone = i
+            wgone.n = wgone.n + 1
+        }
+        // The drop at the edge for one waiting out of sight: the camera to it.
+        zone ellipse seek.$i { at: em.x, em.y; radius: 16; cursor: pointer; active: em.out and sc == screen.index; label: "Go to {win.$i.title}, waiting for you"; role: button }
+        on press seek.$i { focus win.$i }
         // ── canvas magnets: beside the one let go (`cvs.a…`), this one offers
         // it its sides (a gap from it) and its edges in line; the nearest of
         // them all takes it, if it is within `cvs.b…` ──
@@ -11090,6 +11209,9 @@ scene Session {
         // The mouse over a window floating over the tiles: the tiles under it
         // do not take the keyboard from it.
         let on.float = (win.0.floating and win.0.open and not win.0.minimized and win.0.screen == mon and win.0.workspace == pick(mon, win.shown.0, win.shown.1, win.shown.2, win.shown.3) and mouse.x >= x.0 and mouse.x < x.0 + w.0 and mouse.y >= y.0 and mouse.y < y.0 + h.0) + (win.1.floating and win.1.open and not win.1.minimized and win.1.screen == mon and win.1.workspace == pick(mon, win.shown.0, win.shown.1, win.shown.2, win.shown.3) and mouse.x >= x.1 and mouse.x < x.1 + w.1 and mouse.y >= y.1 and mouse.y < y.1 + h.1) + (win.2.floating and win.2.open and not win.2.minimized and win.2.screen == mon and win.2.workspace == pick(mon, win.shown.0, win.shown.1, win.shown.2, win.shown.3) and mouse.x >= x.2 and mouse.x < x.2 + w.2 and mouse.y >= y.2 and mouse.y < y.2 + h.2) + (win.3.floating and win.3.open and not win.3.minimized and win.3.screen == mon and win.3.workspace == pick(mon, win.shown.0, win.shown.1, win.shown.2, win.shown.3) and mouse.x >= x.3 and mouse.x < x.3 + w.3 and mouse.y >= y.3 and mouse.y < y.3 + h.3) + (win.4.floating and win.4.open and not win.4.minimized and win.4.screen == mon and win.4.workspace == pick(mon, win.shown.0, win.shown.1, win.shown.2, win.shown.3) and mouse.x >= x.4 and mouse.x < x.4 + w.4 and mouse.y >= y.4 and mouse.y < y.4 + h.4) + (win.5.floating and win.5.open and not win.5.minimized and win.5.screen == mon and win.5.workspace == pick(mon, win.shown.0, win.shown.1, win.shown.2, win.shown.3) and mouse.x >= x.5 and mouse.x < x.5 + w.5 and mouse.y >= y.5 and mouse.y < y.5 + h.5) + (win.6.floating and win.6.open and not win.6.minimized and win.6.screen == mon and win.6.workspace == pick(mon, win.shown.0, win.shown.1, win.shown.2, win.shown.3) and mouse.x >= x.6 and mouse.x < x.6 + w.6 and mouse.y >= y.6 and mouse.y < y.6 + h.6) + (win.7.floating and win.7.open and not win.7.minimized and win.7.screen == mon and win.7.workspace == pick(mon, win.shown.0, win.shown.1, win.shown.2, win.shown.3) and mouse.x >= x.7 and mouse.x < x.7 + w.7 and mouse.y >= y.7 and mouse.y < y.7 + h.7) + (win.8.floating and win.8.open and not win.8.minimized and win.8.screen == mon and win.8.workspace == pick(mon, win.shown.0, win.shown.1, win.shown.2, win.shown.3) and mouse.x >= x.8 and mouse.x < x.8 + w.8 and mouse.y >= y.8 and mouse.y < y.8 + h.8) + (win.9.floating and win.9.open and not win.9.minimized and win.9.screen == mon and win.9.workspace == pick(mon, win.shown.0, win.shown.1, win.shown.2, win.shown.3) and mouse.x >= x.9 and mouse.x < x.9 + w.9 and mouse.y >= y.9 and mouse.y < y.9 + h.9) + (win.10.floating and win.10.open and not win.10.minimized and win.10.screen == mon and win.10.workspace == pick(mon, win.shown.0, win.shown.1, win.shown.2, win.shown.3) and mouse.x >= x.10 and mouse.x < x.10 + w.10 and mouse.y >= y.10 and mouse.y < y.10 + h.10) + (win.11.floating and win.11.open and not win.11.minimized and win.11.screen == mon and win.11.workspace == pick(mon, win.shown.0, win.shown.1, win.shown.2, win.shown.3) and mouse.x >= x.11 and mouse.x < x.11 + w.11 and mouse.y >= y.11 and mouse.y < y.11 + h.11) + (win.12.floating and win.12.open and not win.12.minimized and win.12.screen == mon and win.12.workspace == pick(mon, win.shown.0, win.shown.1, win.shown.2, win.shown.3) and mouse.x >= x.12 and mouse.x < x.12 + w.12 and mouse.y >= y.12 and mouse.y < y.12 + h.12) + (win.13.floating and win.13.open and not win.13.minimized and win.13.screen == mon and win.13.workspace == pick(mon, win.shown.0, win.shown.1, win.shown.2, win.shown.3) and mouse.x >= x.13 and mouse.x < x.13 + w.13 and mouse.y >= y.13 and mouse.y < y.13 + h.13) + (win.14.floating and win.14.open and not win.14.minimized and win.14.screen == mon and win.14.workspace == pick(mon, win.shown.0, win.shown.1, win.shown.2, win.shown.3) and mouse.x >= x.14 and mouse.x < x.14 + w.14 and mouse.y >= y.14 and mouse.y < y.14 + h.14) + (win.15.floating and win.15.open and not win.15.minimized and win.15.screen == mon and win.15.workspace == pick(mon, win.shown.0, win.shown.1, win.shown.2, win.shown.3) and mouse.x >= x.15 and mouse.x < x.15 + w.15 and mouse.y >= y.15 and mouse.y < y.15 + h.15) > 0.5
+        // Wiring from a window's port: the one under the mouse is where it would go.
+        let wt.over = wiring >= 0 and wiring != i and win.$i.open and sc == mon and ws.here and not win.$i.minimized and mouse.x >= x.$i and mouse.x < x.$i + w.$i and mouse.y >= y.$i and mouse.y < y.$i + h.$i
+        on change wt.over { wtgt = if(wt.over, i, if(wtgt == i, -1, wtgt)) }
         // The keyboard goes to the window the mouse is over, as it enters it:
         // no click needed first (Super+Q closes the one under the mouse).
         // (Only one that is seen: on the workspace its monitor shows, and not
@@ -11744,6 +11866,200 @@ scene Session {
     // Back home, Marea is told (`ride_back`) and comes out of her island.
     // Everything here is in the desktop's coordinates —monitor 1 starts where
     // monitor 0 ends—, so she can ride a window from one monitor to the other.
+    // ── the wires: a new one, a frame after it is asked for —not twice
+    // between the same two; in the first free place—, and the ones of a
+    // window that goes ──
+    repeat q in 0..1 {
+        let wn.free = if(wire.0.a < 0, 0, if(wire.1.a < 0, 1, if(wire.2.a < 0, 2, if(wire.3.a < 0, 3, if(wire.4.a < 0, 4, if(wire.5.a < 0, 5, if(wire.6.a < 0, 6, if(wire.7.a < 0, 7, -1))))))))
+        let wn.dup = (wire.0.a == wnew.a and wire.0.b == wnew.b) or (wire.0.a == wnew.b and wire.0.b == wnew.a) or (wire.1.a == wnew.a and wire.1.b == wnew.b) or (wire.1.a == wnew.b and wire.1.b == wnew.a) or (wire.2.a == wnew.a and wire.2.b == wnew.b) or (wire.2.a == wnew.b and wire.2.b == wnew.a) or (wire.3.a == wnew.a and wire.3.b == wnew.b) or (wire.3.a == wnew.b and wire.3.b == wnew.a) or (wire.4.a == wnew.a and wire.4.b == wnew.b) or (wire.4.a == wnew.b and wire.4.b == wnew.a) or (wire.5.a == wnew.a and wire.5.b == wnew.b) or (wire.5.a == wnew.b and wire.5.b == wnew.a) or (wire.6.a == wnew.a and wire.6.b == wnew.b) or (wire.6.a == wnew.b and wire.6.b == wnew.a) or (wire.7.a == wnew.a and wire.7.b == wnew.b) or (wire.7.a == wnew.b and wire.7.b == wnew.a)
+        on change wnew.go while wnew.go > 0.5 and wn.free == 0 and not wn.dup {
+            wire.0.a = wnew.a
+            wire.0.b = wnew.b
+            wire.0.flow = 0
+            wborn.0: 0 ~0ms
+            wborn.0: 1 after 16ms
+        }
+        on change wnew.go while wnew.go > 0.5 and wn.free == 1 and not wn.dup {
+            wire.1.a = wnew.a
+            wire.1.b = wnew.b
+            wire.1.flow = 0
+            wborn.1: 0 ~0ms
+            wborn.1: 1 after 16ms
+        }
+        on change wnew.go while wnew.go > 0.5 and wn.free == 2 and not wn.dup {
+            wire.2.a = wnew.a
+            wire.2.b = wnew.b
+            wire.2.flow = 0
+            wborn.2: 0 ~0ms
+            wborn.2: 1 after 16ms
+        }
+        on change wnew.go while wnew.go > 0.5 and wn.free == 3 and not wn.dup {
+            wire.3.a = wnew.a
+            wire.3.b = wnew.b
+            wire.3.flow = 0
+            wborn.3: 0 ~0ms
+            wborn.3: 1 after 16ms
+        }
+        on change wnew.go while wnew.go > 0.5 and wn.free == 4 and not wn.dup {
+            wire.4.a = wnew.a
+            wire.4.b = wnew.b
+            wire.4.flow = 0
+            wborn.4: 0 ~0ms
+            wborn.4: 1 after 16ms
+        }
+        on change wnew.go while wnew.go > 0.5 and wn.free == 5 and not wn.dup {
+            wire.5.a = wnew.a
+            wire.5.b = wnew.b
+            wire.5.flow = 0
+            wborn.5: 0 ~0ms
+            wborn.5: 1 after 16ms
+        }
+        on change wnew.go while wnew.go > 0.5 and wn.free == 6 and not wn.dup {
+            wire.6.a = wnew.a
+            wire.6.b = wnew.b
+            wire.6.flow = 0
+            wborn.6: 0 ~0ms
+            wborn.6: 1 after 16ms
+        }
+        on change wnew.go while wnew.go > 0.5 and wn.free == 7 and not wn.dup {
+            wire.7.a = wnew.a
+            wire.7.b = wnew.b
+            wire.7.flow = 0
+            wborn.7: 0 ~0ms
+            wborn.7: 1 after 16ms
+        }
+    }
+    repeat k in 0..8 {
+        prop wborn.$k = 1 ~pop
+        prop wcut.$k = 0 ~280ms
+        on change wgone.n while wire.$k.a == wgone or wire.$k.b == wgone {
+            wire.$k.a = -1
+            wire.$k.b = -1
+            wire.$k.flow = 0
+        }
+        // Each drawn as a current between the two, under the windows: from
+        // the middle of the sides that face each other, an S that leaves and
+        // arrives straight. Still while nothing goes along it; amber if the
+        // agent at either end waits for you; and while something goes, a
+        // drop of light runs along it and rings out where it arrives.
+        let wv.a = max(wire.$k.a, 0)
+        let wv.b = max(wire.$k.b, 0)
+        let wv.on = wire.$k.a >= 0 and wire.$k.b >= 0 and pick(screen.index, cv.0, cv.1, cv.2, cv.3) > 0.5 and pick(wv.a, (win.0.open and not win.0.minimized and win.0.screen == screen.index and win.0.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.1.open and not win.1.minimized and win.1.screen == screen.index and win.1.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.2.open and not win.2.minimized and win.2.screen == screen.index and win.2.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.3.open and not win.3.minimized and win.3.screen == screen.index and win.3.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.4.open and not win.4.minimized and win.4.screen == screen.index and win.4.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.5.open and not win.5.minimized and win.5.screen == screen.index and win.5.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.6.open and not win.6.minimized and win.6.screen == screen.index and win.6.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.7.open and not win.7.minimized and win.7.screen == screen.index and win.7.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.8.open and not win.8.minimized and win.8.screen == screen.index and win.8.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.9.open and not win.9.minimized and win.9.screen == screen.index and win.9.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.10.open and not win.10.minimized and win.10.screen == screen.index and win.10.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.11.open and not win.11.minimized and win.11.screen == screen.index and win.11.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.12.open and not win.12.minimized and win.12.screen == screen.index and win.12.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.13.open and not win.13.minimized and win.13.screen == screen.index and win.13.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.14.open and not win.14.minimized and win.14.screen == screen.index and win.14.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.15.open and not win.15.minimized and win.15.screen == screen.index and win.15.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3))) and pick(wv.b, (win.0.open and not win.0.minimized and win.0.screen == screen.index and win.0.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.1.open and not win.1.minimized and win.1.screen == screen.index and win.1.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.2.open and not win.2.minimized and win.2.screen == screen.index and win.2.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.3.open and not win.3.minimized and win.3.screen == screen.index and win.3.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.4.open and not win.4.minimized and win.4.screen == screen.index and win.4.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.5.open and not win.5.minimized and win.5.screen == screen.index and win.5.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.6.open and not win.6.minimized and win.6.screen == screen.index and win.6.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.7.open and not win.7.minimized and win.7.screen == screen.index and win.7.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.8.open and not win.8.minimized and win.8.screen == screen.index and win.8.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.9.open and not win.9.minimized and win.9.screen == screen.index and win.9.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.10.open and not win.10.minimized and win.10.screen == screen.index and win.10.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.11.open and not win.11.minimized and win.11.screen == screen.index and win.11.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.12.open and not win.12.minimized and win.12.screen == screen.index and win.12.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.13.open and not win.13.minimized and win.13.screen == screen.index and win.13.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.14.open and not win.14.minimized and win.14.screen == screen.index and win.14.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.15.open and not win.15.minimized and win.15.screen == screen.index and win.15.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)))
+        let wv.ax = pick(wv.a, x.0, x.1, x.2, x.3, x.4, x.5, x.6, x.7, x.8, x.9, x.10, x.11, x.12, x.13, x.14, x.15)
+        let wv.ay = pick(wv.a, y.0, y.1, y.2, y.3, y.4, y.5, y.6, y.7, y.8, y.9, y.10, y.11, y.12, y.13, y.14, y.15)
+        let wv.aw = pick(wv.a, w.0, w.1, w.2, w.3, w.4, w.5, w.6, w.7, w.8, w.9, w.10, w.11, w.12, w.13, w.14, w.15)
+        let wv.ah = pick(wv.a, h.0, h.1, h.2, h.3, h.4, h.5, h.6, h.7, h.8, h.9, h.10, h.11, h.12, h.13, h.14, h.15)
+        let wv.bx = pick(wv.b, x.0, x.1, x.2, x.3, x.4, x.5, x.6, x.7, x.8, x.9, x.10, x.11, x.12, x.13, x.14, x.15)
+        let wv.by = pick(wv.b, y.0, y.1, y.2, y.3, y.4, y.5, y.6, y.7, y.8, y.9, y.10, y.11, y.12, y.13, y.14, y.15)
+        let wv.bw = pick(wv.b, w.0, w.1, w.2, w.3, w.4, w.5, w.6, w.7, w.8, w.9, w.10, w.11, w.12, w.13, w.14, w.15)
+        let wv.bh = pick(wv.b, h.0, h.1, h.2, h.3, h.4, h.5, h.6, h.7, h.8, h.9, h.10, h.11, h.12, h.13, h.14, h.15)
+        let wv.acx = wv.ax + wv.aw / 2
+        let wv.acy = wv.ay + wv.ah / 2
+        let wv.bcx = wv.bx + wv.bw / 2
+        let wv.bcy = wv.by + wv.bh / 2
+        let wv.hz = abs(wv.bcx - wv.acx) / max(wv.aw + wv.bw, 1) >= abs(wv.bcy - wv.acy) / max(wv.ah + wv.bh, 1)
+        let wv.p0x = if(wv.hz, if(wv.bcx >= wv.acx, wv.ax + wv.aw, wv.ax), wv.acx)
+        let wv.p0y = if(wv.hz, wv.acy, if(wv.bcy >= wv.acy, wv.ay + wv.ah, wv.ay))
+        let wv.p1x = if(wv.hz, if(wv.bcx >= wv.acx, wv.bx, wv.bx + wv.bw), wv.bcx)
+        let wv.p1y = if(wv.hz, wv.bcy, if(wv.bcy >= wv.acy, wv.by, wv.by + wv.bh))
+        let wv.mx = (wv.p0x + wv.p1x) / 2
+        let wv.my = (wv.p0y + wv.p1y) / 2
+        let wv.c1x = if(wv.hz, wv.mx, wv.p0x)
+        let wv.c1y = if(wv.hz, wv.p0y, wv.my)
+        let wv.c2x = if(wv.hz, wv.mx, wv.p1x)
+        let wv.c2y = if(wv.hz, wv.p1y, wv.my)
+        let wv.wait = pick(wv.a, ag.0, ag.1, ag.2, ag.3, ag.4, ag.5, ag.6, ag.7, ag.8, ag.9, ag.10, ag.11, ag.12, ag.13, ag.14, ag.15) > 2.5 or pick(wv.b, ag.0, ag.1, ag.2, ag.3, ag.4, ag.5, ag.6, ag.7, ag.8, ag.9, ag.10, ag.11, ag.12, ag.13, ag.14, ag.15) > 2.5
+        let wv.go = wire.$k.flow != 0
+        let wv.t = fract(time / 1.3)
+        let wv.s = if(wire.$k.flow < 0, 1 - wv.t, wv.t)
+        group {
+            z: -1
+            show: wv.on
+            opacity: 1 - wcut.$k
+            group {
+                blur: 6
+                path { stroke: 8; color: if(wv.wait, amber, mint); opacity: if(wv.go, 22%, 9%) + 8% * wv.wait
+                    move wv.p0x, wv.p0y
+                    curve wv.mx, wv.my via wv.c1x, wv.c1y
+                    curve wv.p1x, wv.p1y via wv.c2x, wv.c2y
+                }
+            }
+            path { stroke: 2 + 4 * (1 - wborn.$k); color: if(wv.wait, amber, mint); opacity: if(wv.go or wv.wait, 85%, 45%) + 40% * (1 - wborn.$k)
+                move wv.p0x, wv.p0y
+                curve wv.mx, wv.my via wv.c1x, wv.c1y
+                curve wv.p1x, wv.p1y via wv.c2x, wv.c2y
+            }
+            ellipse { at: wv.p0x, wv.p0y; radius: 3.5; color: if(wv.wait, amber, mint); opacity: 85% }
+            ellipse { at: wv.p1x, wv.p1y; radius: 3.5; color: if(wv.wait, amber, mint); opacity: 85% }
+            // What goes along it: a drop of light and its trail.
+            group {
+                show: wv.go
+                ellipse { at: if((max(wv.s - 0.06, 0)) < 0.5, (1 - (max(wv.s - 0.06, 0)) * 2) * (1 - (max(wv.s - 0.06, 0)) * 2) * wv.p0x + 2 * (max(wv.s - 0.06, 0)) * 2 * (1 - (max(wv.s - 0.06, 0)) * 2) * wv.c1x + (max(wv.s - 0.06, 0)) * 2 * (max(wv.s - 0.06, 0)) * 2 * wv.mx, (1 - ((max(wv.s - 0.06, 0)) * 2 - 1)) * (1 - ((max(wv.s - 0.06, 0)) * 2 - 1)) * wv.mx + 2 * ((max(wv.s - 0.06, 0)) * 2 - 1) * (1 - ((max(wv.s - 0.06, 0)) * 2 - 1)) * wv.c2x + ((max(wv.s - 0.06, 0)) * 2 - 1) * ((max(wv.s - 0.06, 0)) * 2 - 1) * wv.p1x), if((max(wv.s - 0.06, 0)) < 0.5, (1 - (max(wv.s - 0.06, 0)) * 2) * (1 - (max(wv.s - 0.06, 0)) * 2) * wv.p0y + 2 * (max(wv.s - 0.06, 0)) * 2 * (1 - (max(wv.s - 0.06, 0)) * 2) * wv.c1y + (max(wv.s - 0.06, 0)) * 2 * (max(wv.s - 0.06, 0)) * 2 * wv.my, (1 - ((max(wv.s - 0.06, 0)) * 2 - 1)) * (1 - ((max(wv.s - 0.06, 0)) * 2 - 1)) * wv.my + 2 * ((max(wv.s - 0.06, 0)) * 2 - 1) * (1 - ((max(wv.s - 0.06, 0)) * 2 - 1)) * wv.c2y + ((max(wv.s - 0.06, 0)) * 2 - 1) * ((max(wv.s - 0.06, 0)) * 2 - 1) * wv.p1y); radius: 2.5; color: #dffaf0; opacity: 35% }
+                ellipse { at: if((max(wv.s - 0.03, 0)) < 0.5, (1 - (max(wv.s - 0.03, 0)) * 2) * (1 - (max(wv.s - 0.03, 0)) * 2) * wv.p0x + 2 * (max(wv.s - 0.03, 0)) * 2 * (1 - (max(wv.s - 0.03, 0)) * 2) * wv.c1x + (max(wv.s - 0.03, 0)) * 2 * (max(wv.s - 0.03, 0)) * 2 * wv.mx, (1 - ((max(wv.s - 0.03, 0)) * 2 - 1)) * (1 - ((max(wv.s - 0.03, 0)) * 2 - 1)) * wv.mx + 2 * ((max(wv.s - 0.03, 0)) * 2 - 1) * (1 - ((max(wv.s - 0.03, 0)) * 2 - 1)) * wv.c2x + ((max(wv.s - 0.03, 0)) * 2 - 1) * ((max(wv.s - 0.03, 0)) * 2 - 1) * wv.p1x), if((max(wv.s - 0.03, 0)) < 0.5, (1 - (max(wv.s - 0.03, 0)) * 2) * (1 - (max(wv.s - 0.03, 0)) * 2) * wv.p0y + 2 * (max(wv.s - 0.03, 0)) * 2 * (1 - (max(wv.s - 0.03, 0)) * 2) * wv.c1y + (max(wv.s - 0.03, 0)) * 2 * (max(wv.s - 0.03, 0)) * 2 * wv.my, (1 - ((max(wv.s - 0.03, 0)) * 2 - 1)) * (1 - ((max(wv.s - 0.03, 0)) * 2 - 1)) * wv.my + 2 * ((max(wv.s - 0.03, 0)) * 2 - 1) * (1 - ((max(wv.s - 0.03, 0)) * 2 - 1)) * wv.c2y + ((max(wv.s - 0.03, 0)) * 2 - 1) * ((max(wv.s - 0.03, 0)) * 2 - 1) * wv.p1y); radius: 3.5; color: #dffaf0; opacity: 55% }
+                group {
+                    blur: 4
+                    ellipse { at: if((wv.s) < 0.5, (1 - (wv.s) * 2) * (1 - (wv.s) * 2) * wv.p0x + 2 * (wv.s) * 2 * (1 - (wv.s) * 2) * wv.c1x + (wv.s) * 2 * (wv.s) * 2 * wv.mx, (1 - ((wv.s) * 2 - 1)) * (1 - ((wv.s) * 2 - 1)) * wv.mx + 2 * ((wv.s) * 2 - 1) * (1 - ((wv.s) * 2 - 1)) * wv.c2x + ((wv.s) * 2 - 1) * ((wv.s) * 2 - 1) * wv.p1x), if((wv.s) < 0.5, (1 - (wv.s) * 2) * (1 - (wv.s) * 2) * wv.p0y + 2 * (wv.s) * 2 * (1 - (wv.s) * 2) * wv.c1y + (wv.s) * 2 * (wv.s) * 2 * wv.my, (1 - ((wv.s) * 2 - 1)) * (1 - ((wv.s) * 2 - 1)) * wv.my + 2 * ((wv.s) * 2 - 1) * (1 - ((wv.s) * 2 - 1)) * wv.c2y + ((wv.s) * 2 - 1) * ((wv.s) * 2 - 1) * wv.p1y); radius: 9; color: if(wv.wait, amber, mint); opacity: 70% }
+                }
+                ellipse { at: if((wv.s) < 0.5, (1 - (wv.s) * 2) * (1 - (wv.s) * 2) * wv.p0x + 2 * (wv.s) * 2 * (1 - (wv.s) * 2) * wv.c1x + (wv.s) * 2 * (wv.s) * 2 * wv.mx, (1 - ((wv.s) * 2 - 1)) * (1 - ((wv.s) * 2 - 1)) * wv.mx + 2 * ((wv.s) * 2 - 1) * (1 - ((wv.s) * 2 - 1)) * wv.c2x + ((wv.s) * 2 - 1) * ((wv.s) * 2 - 1) * wv.p1x), if((wv.s) < 0.5, (1 - (wv.s) * 2) * (1 - (wv.s) * 2) * wv.p0y + 2 * (wv.s) * 2 * (1 - (wv.s) * 2) * wv.c1y + (wv.s) * 2 * (wv.s) * 2 * wv.my, (1 - ((wv.s) * 2 - 1)) * (1 - ((wv.s) * 2 - 1)) * wv.my + 2 * ((wv.s) * 2 - 1) * (1 - ((wv.s) * 2 - 1)) * wv.c2y + ((wv.s) * 2 - 1) * ((wv.s) * 2 - 1) * wv.p1y); radius: 4.5; color: #f2fffa }
+                // …and rings out where it arrives.
+                ellipse { at: if(wire.$k.flow < 0, wv.p0x, wv.p1x), if(wire.$k.flow < 0, wv.p0y, wv.p1y); radius: 4 + 22 * wv.t; stroke: 2.2 * (1 - wv.t) + 0.3; color: if(wv.wait, amber, mint); opacity: 70% * (1 - wv.t) }
+            }
+        }
+        // Cut: the mouse over its middle shows a pill; pressed, it drains away.
+        zone ellipse wcutz.$k { at: wv.mx, wv.my; radius: 14; cursor: pointer; active: wv.on and not overview and wcut.$k < 0.01; label: "Cut this wire"; role: button }
+        group {
+            show: wv.on and wcutz.$k.hover > 0.01
+            opacity: wcutz.$k.hover * (1 - wcut.$k)
+            body {
+                color: #0c0e10
+                rim: 18%
+                shadow: 0, 4, 12, 45%
+                ellipse { at: wv.mx, wv.my; radius: 12 }
+            }
+            ellipse { at: wv.mx, wv.my; radius: 12; stroke: 1.3; color: coral; opacity: 80% }
+            box { at: wv.mx, wv.my; size: 9, 1.8; corner: 0.9; rotate: 45deg; color: coral }
+            box { at: wv.mx, wv.my; size: 9, 1.8; corner: 0.9; rotate: -45deg; color: coral }
+        }
+        on press wcutz.$k { wcut.$k: 1 ~280ms }
+        on change wcut.$k while wcut.$k > 0.99 {
+            wire.$k.a = -1
+            wire.$k.b = -1
+            wire.$k.flow = 0
+            wcut.$k: 0 ~0ms
+        }
+    }
+    // Being wired: a thread of water from the port to the mouse, and the
+    // window under it, lit.
+    repeat q in 0..1 {
+        let wg.w = max(wiring, 0)
+        let wg.x = pick(wg.w, x.0 + 18, x.1 + 18, x.2 + 18, x.3 + 18, x.4 + 18, x.5 + 18, x.6 + 18, x.7 + 18, x.8 + 18, x.9 + 18, x.10 + 18, x.11 + 18, x.12 + 18, x.13 + 18, x.14 + 18, x.15 + 18)
+        let wg.y = pick(wg.w, y.0 + tb / 2, y.1 + tb / 2, y.2 + tb / 2, y.3 + tb / 2, y.4 + tb / 2, y.5 + tb / 2, y.6 + tb / 2, y.7 + tb / 2, y.8 + tb / 2, y.9 + tb / 2, y.10 + tb / 2, y.11 + tb / 2, y.12 + tb / 2, y.13 + tb / 2, y.14 + tb / 2, y.15 + tb / 2)
+        let wg.on = wiring >= 0 and mon == screen.index and pick(wg.w, win.0.screen, win.1.screen, win.2.screen, win.3.screen, win.4.screen, win.5.screen, win.6.screen, win.7.screen, win.8.screen, win.9.screen, win.10.screen, win.11.screen, win.12.screen, win.13.screen, win.14.screen, win.15.screen) == screen.index
+        let wg.t = max(wtgt, 0)
+        group {
+            show: wg.on
+            group {
+                blur: 6
+                path { stroke: 8; color: mint; opacity: 18%
+                    move wg.x, wg.y
+                    curve (wg.x + mouse.x) / 2, (wg.y + mouse.y) / 2 via (wg.x + mouse.x) / 2, wg.y
+                    curve mouse.x, mouse.y via (wg.x + mouse.x) / 2, mouse.y
+                }
+            }
+            path { stroke: 2.5; color: mint; opacity: 90%
+                move wg.x, wg.y
+                curve (wg.x + mouse.x) / 2, (wg.y + mouse.y) / 2 via (wg.x + mouse.x) / 2, wg.y
+                curve mouse.x, mouse.y via (wg.x + mouse.x) / 2, mouse.y
+            }
+            body {
+                gradient: radial mouse.x - 2, mouse.y - 2 radius 8, #e8fff5, mint 45%, #3f8f76
+                rim: 35%
+                shadow: 0, 2, 6, 40%
+                ellipse { at: mouse.x, mouse.y; radius: 6 }
+            }
+            box { from: pick(wg.t, x.0, x.1, x.2, x.3, x.4, x.5, x.6, x.7, x.8, x.9, x.10, x.11, x.12, x.13, x.14, x.15) - 3, pick(wg.t, y.0, y.1, y.2, y.3, y.4, y.5, y.6, y.7, y.8, y.9, y.10, y.11, y.12, y.13, y.14, y.15) - 3; size: pick(wg.t, w.0, w.1, w.2, w.3, w.4, w.5, w.6, w.7, w.8, w.9, w.10, w.11, w.12, w.13, w.14, w.15) + 6, pick(wg.t, h.0, h.1, h.2, h.3, h.4, h.5, h.6, h.7, h.8, h.9, h.10, h.11, h.12, h.13, h.14, h.15) + 6; corner: 14; stroke: 2.5; color: mint; opacity: 85%; show: wtgt >= 0 }
+        }
+    }
     event toggle_canvas
     on toggle_canvas while mon == 0 {
         cv.0 = 1 - cv.0
