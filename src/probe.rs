@@ -11,7 +11,12 @@ pub fn run() -> Result<(), String> {
     let gpu = pleamar::gpu::Gpu::new(&instance, None);
     let modifiers = gpu.render_modifiers().to_vec();
     println!("probe · the card paints BGRA in {} layouts: {:x?}", modifiers.len(), modifiers);
-    let node: OwnedFd = std::fs::OpenOptions::new().read(true).write(true).open("/dev/dri/renderD128").map_err(|e| format!("no render node: {e}"))?.into();
+    // gbm on the card wgpu paints on: on a machine with two, the other card's
+    // gbm makes no buffer in its layouts. renderD128 when the card does not say.
+    let found = gpu.dmabuf_formats().and_then(|(card, _)| crate::nest::render_node_path(card));
+    let path = found.clone().unwrap_or_else(|| "/dev/dri/renderD128".into());
+    println!("probe · gbm on {}{}", path.display(), if found.is_none() { " (the card did not say which is its)" } else { "" });
+    let node: OwnedFd = std::fs::OpenOptions::new().read(true).write(true).open(&path).map_err(|e| format!("cannot open {}: {e}", path.display()))?.into();
     let device = gbm::Device::new(node).map_err(|e| format!("no gbm: {e}"))?;
     let (w, h) = (1920u32, 1080u32);
     let bo = device
