@@ -160,6 +160,12 @@ enum Waits {
     /// Marea), or a window the scene lays out on it.
     Panel(usize),
     Window(usize),
+    /// A program's own surface kept off the screen (`agent hide`, a
+    /// creation's place): not told until it is shown again, as a compositor
+    /// tells nothing to what it does not show —its program draws for nobody
+    /// meanwhile, and a pleamar scene with another surface shown hands it the
+    /// pace—.
+    Hidden(u64),
 }
 
 /// A program's window: a Wayland one (xdg-shell), or an X11 one (XWayland).
@@ -2324,6 +2330,13 @@ impl State {
     pub(super) fn agent_hide_layer(&mut self, id: u64, hide: bool) -> Result<(), &'static str> {
         let k = self.panels.iter().position(|p| p.id == id && matches!(p.shell, Shell::Layer(_))).ok_or("target-not-found")?;
         self.panels[k].hidden = hide;
+        // Back: what it asked meanwhile waits for its monitor's next frame.
+        if !hide {
+            let monitor = self.panels[k].monitor;
+            for (_, waits) in self.callbacks.iter_mut().filter(|(_, w)| *w == Waits::Hidden(id)) {
+                *waits = Waits::Panel(monitor);
+            }
+        }
         self.show_panel(k);
         self.tell_reserved();
         Ok(())
@@ -2471,7 +2484,7 @@ impl State {
             let now = match *waits {
                 Waits::Scene => true,
                 Waits::Panel(m) => Some(m) == monitor,
-                Waits::Window(_) => false,
+                Waits::Window(_) | Waits::Hidden(_) => false,
             };
             if now {
                 cb.done(t);
@@ -2533,7 +2546,7 @@ impl State {
             .filter_map(|(_, waits)| match *waits {
                 Waits::Scene => Some(self.refresh_of(None).saturating_sub(self.answered_at.elapsed())),
                 Waits::Window(m) => Some(self.beat_due_in(m)),
-                Waits::Panel(_) => None,
+                Waits::Panel(_) | Waits::Hidden(_) => None,
             })
             .min()
     }
@@ -2564,7 +2577,7 @@ impl State {
             let now = match *waits {
                 Waits::Scene => scene_due,
                 Waits::Window(m) => windows_due(m),
-                Waits::Panel(_) => false,
+                Waits::Panel(_) | Waits::Hidden(_) => false,
             };
             if now {
                 cb.done(t);
@@ -2594,9 +2607,14 @@ impl State {
         let t = self.time();
         self.answered_at = Instant::now();
         self.awaiting_paint = None;
-        for (cb, _) in self.callbacks.drain(..) {
-            cb.done(t);
-        }
+        // (Not what is kept off the screen: that waits until it is shown.)
+        self.callbacks.retain(|(cb, waits)| {
+            let hidden = matches!(waits, Waits::Hidden(_));
+            if !hidden {
+                cb.done(t);
+            }
+            hidden
+        });
         self.presentation_done();
     }
 
@@ -3316,6 +3334,7 @@ impl CompositorHandler for State {
             root = p;
         }
         let waits = match self.panels.iter().find(|p| p.shell.wl_surface() == &root) {
+            Some(p) if p.hidden => Waits::Hidden(p.id),
             Some(p) => Waits::Panel(p.monitor),
             None => match self.slots.iter().flatten().find(|w| w.surface == root) {
                 Some(w) => Waits::Window(w.screen),
