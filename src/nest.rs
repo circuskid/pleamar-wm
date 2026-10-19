@@ -1261,6 +1261,15 @@ impl State {
                 }
             }
             ToNest::Send(slot, screen) => {
+                // No monitor by that number (a scene's `send … to 1` on one monitor): the window
+                // would take it and nothing would draw it again. It stays, and the scene is told
+                // where it still is, since a scene may already have put it in a pool shown there.
+                if screen >= self.outputs.len() {
+                    if let Some(Some(w)) = self.slots.get(slot) {
+                        self.tell(NestEvent::Screen(slot, w.screen));
+                    }
+                    return;
+                }
                 if let Some(Some(w)) = self.slots.get_mut(slot) {
                     // Carried somewhere on purpose: where it came from no longer calls it back.
                     w.home = None;
