@@ -38,7 +38,7 @@ fn main() {
     // `pleamar-wm session scene.plm [options]`: a session of its own, from a
     // TTY, without a compositor underneath. Otherwise, pleamar as ever.
     let mut args: Vec<String> = std::env::args().skip(1).collect();
-    // `pleamar-wm hyprctl monitors|activewindow`: the session's desktop, said
+    // `pleamar-wm hyprctl monitors|activewindow|locked`: the session's desktop, said
     // the way Hyprland says it, for what used to ask Hyprland (Marea's
     // screenshots) and now runs here.
     if args.first().map(String::as_str) == Some("hyprctl") {
@@ -242,8 +242,24 @@ fn hyprctl(what: &str) -> i32 {
             }
             0
         }
+        // `true` or `false`, as Hyprland says it: a script that locks and then
+        // suspends waits for `true`. No line is no answer, never `false`.
+        "locked" => match text.lines().find_map(|l| l.strip_prefix("locked ")) {
+            Some("1") => {
+                println!("true");
+                0
+            }
+            Some("0") => {
+                println!("false");
+                0
+            }
+            _ => {
+                eprintln!("pleamar-wm's session does not say whether it is locked");
+                1
+            }
+        },
         _ => {
-            eprintln!("pleamar-wm hyprctl monitors | activewindow");
+            eprintln!("pleamar-wm hyprctl monitors | activewindow | locked");
             1
         }
     }

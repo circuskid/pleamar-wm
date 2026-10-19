@@ -450,8 +450,9 @@ The cursor is the system's theme (XCURSOR_THEME, or what ~/.icons/default
 inherits), on the card's cursor plane, with the shape whoever has the pointer
 asks for. Other programs' bars keep their room (exclusive zones: the scene
 reads `win.reserved.$s.top`…). Screenshots work (`wlr-screencopy`: grim, a
-recorder, Marea's lens), and `pleamar-wm hyprctl monitors|activewindow` says
-the desktop the way Hyprland does, for what used to ask it. Where the mouse
+recorder, Marea's lens), and `pleamar-wm hyprctl`
+`monitors|activewindow|locked` says the desktop the way Hyprland does, for
+what used to ask it. Where the mouse
 is on the whole desktop is said, as it moves, on the `cursor.sock` next to
 the session's other sockets (`PLEAMAR_SOCKETS`): a pleamar scene that reads
 `cursor.x` gets it from there, so Marea's eyes follow the mouse anywhere and
