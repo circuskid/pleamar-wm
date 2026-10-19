@@ -3980,12 +3980,16 @@ impl DrmSyncobjHandler for State {
 /// The render node of that card (by its device number), opened: what sync
 /// points are imported with when there is no session's card.
 fn render_node(device: u64) -> Option<smithay::backend::drm::DrmDeviceFd> {
-    use std::os::unix::fs::MetadataExt;
-    let path = std::fs::read_dir("/dev/dri").ok()?.filter_map(Result::ok).map(|e| e.path()).find(|p| {
-        p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("renderD")) && std::fs::metadata(p).is_ok_and(|m| m.rdev() == device)
-    })?;
-    let file = std::fs::OpenOptions::new().read(true).write(true).open(path).ok()?;
+    let file = std::fs::OpenOptions::new().read(true).write(true).open(render_node_path(device)?).ok()?;
     Some(smithay::backend::drm::DrmDeviceFd::new(smithay::utils::DeviceFd::from(std::os::fd::OwnedFd::from(file))))
+}
+
+/// Where that card's render node is: `/dev/dri/renderD*` with that device number.
+pub(crate) fn render_node_path(device: u64) -> Option<std::path::PathBuf> {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::read_dir("/dev/dri").ok()?.filter_map(Result::ok).map(|e| e.path()).find(|p| {
+        p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("renderD")) && std::fs::metadata(p).is_ok_and(|m| m.rdev() == device)
+    })
 }
 
 impl OutputHandler for State {
