@@ -3169,6 +3169,20 @@ impl CompositorHandler for State {
                 c.dmabuf = None;
             }
         });
+        // A lock screen gone with its program (it died, or was killed): the
+        // session stays locked, but that screen leaves. Left in place it kept
+        // the keyboard, and the lock screen started next to take over never
+        // got a key: the session could not be unlocked.
+        if let Some(k) = self.panels.iter().position(|p| matches!(p.shell, Shell::Lock(_)) && p.shell.wl_surface() == surface) {
+            let p = self.panels.remove(k);
+            layers::hide(p.id);
+            if self.panel_pointer == Some(p.id) {
+                self.panel_pointer = None;
+            }
+            if self.panel_keyboard == Some(p.id) {
+                self.panel_keyboard = None;
+            }
+        }
     }
 
     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState {
