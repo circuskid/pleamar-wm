@@ -38,9 +38,9 @@ the open windows without closing anything.
 
 # What's new
 
-- **Wires: agents that work together** (0.4.6): on a canvas, drag the drop at
+- **Wires: agents that work together** (0.4.6): on a canvas or a free monitor, drag the drop at
   the start of a window's title bar to another window and the two are wired
-  —a current of water between them; the mouse over its middle names it («tests», «frontend») or cuts it—. The
+  —a current of water between them; the mouse over its middle names it («tests», «frontend») or cuts it—. Tiled, wires stay: each window says in the gap above it what it is wired to, and the ones wired to the window under the mouse light up. The
   wire is the person's word: an agent in one terminal (Claude Code, Codex,
   any with a shell) may then read the other, type in it and hand it tasks
   with `pleamar-wm link`: `whoami`, `list`, `label N NAME`, `read N`, `send N TEXT --enter`,
