@@ -926,7 +926,9 @@ fn run(max: usize, to_render: Sender<ToRender>, rx: Channel<ToNest>, ready: std:
             TimeoutAction::ToDuration(std::time::Duration::from_secs(1))
         });
         let file = format!("{}/windows", std::path::Path::new(&desktop_file_of(&state.socket)).parent().map(|p| p.display().to_string()).unwrap_or_default());
-        crate::term::watch_agents(file, state.to_render.clone());
+        crate::term::watch_agents(file.clone(), state.to_render.clone());
+        // And the canvas kept from one session to the next (keep.rs).
+        crate::keep::start(file, state.to_render.clone());
     }
     // A session of its own starts what the desktop has (the wallpaper, Marea):
     // `PLEAMAR_WM_AUTOSTART`, or ~/.config/pleamar/autostart, one command a

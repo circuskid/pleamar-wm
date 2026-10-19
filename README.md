@@ -53,6 +53,13 @@ the open windows without closing anything.
   whether it works, is ready or waits for you (its edge goes amber); zoomed
   out, a canvas shows it big over each window, and one waiting out of sight
   leaves a drop at the monitor's edge that takes the camera there.
+- **The canvas comes back** (0.4.6): while a session runs, its terminals on
+  free monitors are kept —their program, their folder, the agent in each,
+  their place on the plane—, with the wires between them and each camera.
+  The next session offers «Bring back your canvas»: each terminal opens
+  again in its folder and place, its agent starts again on its last
+  conversation (`claude --continue`, `codex resume --last`), and the wires
+  are drawn again with their names. Kept in `~/.local/state/pleamar-wm`.
 - **Agents that know about wires** (0.4.6): `pleamar-wm link setup` (it says
   what it changes and asks) installs a skill for Claude Code and Codex,
   registers `pleamar-wm link mcp` as their MCP server —tools of their own

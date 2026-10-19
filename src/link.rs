@@ -600,6 +600,7 @@ pub(crate) fn go(args: &[String]) -> Result<String, String> {
         }
         "setup" => setup(rest.iter().any(|a| a == "--yes"), rest.iter().any(|a| a == "--undo")),
         "spawn" => spawn(rest),
+        "restore" => crate::keep::restore(rest.iter().any(|a| a == "--dismiss")),
         _ => Err(USAGE.into()),
     }
 }
@@ -749,6 +750,11 @@ fn claude_hooks(path: &str, undo: bool) -> Result<(), String> {
     std::fs::write(format!("{path}.new"), out + "\n").and_then(|_| std::fs::rename(format!("{path}.new"), path)).map_err(|e| format!("{path}: {e}"))
 }
 
+/// The process of the window in that place.
+pub(crate) fn pid_of_slot(slot: usize) -> Option<u32> {
+    windows().ok()?.into_iter().find(|w| w.slot == slot).map(|w| w.pid)
+}
+
 /// A program the session starts as it starts its own: loose from the caller.
 fn start(exe: &str, cwd: &str) -> Result<u32, String> {
     let mut c = std::process::Command::new(exe);
@@ -763,7 +769,7 @@ fn start(exe: &str, cwd: &str) -> Result<u32, String> {
 /// A terminal opened for an agent: the same program as the caller's (kitty,
 /// Alacritty…), in that folder. Its window's place and its layer, once both
 /// are there.
-fn open_terminal(exe: &str, cwd: &str) -> Result<(usize, i32), String> {
+pub(crate) fn open_terminal(exe: &str, cwd: &str) -> Result<(usize, i32), String> {
     let before: Vec<usize> = windows()?.iter().map(|w| w.slot).collect();
     let pid = start(exe, cwd)?;
     let deadline = Instant::now() + Duration::from_secs(20);

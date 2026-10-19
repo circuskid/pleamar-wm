@@ -13136,6 +13136,50 @@ scene Session {
         }
     }
 
+    // ── the canvas kept from the last session (pleamar-wm's keep.rs):
+    // offered on the first monitor until brought back or let go ──
+    fact kept.n = 0
+    fact kept.w = 0
+    prop keptv = 0 ~260ms
+    follow keptv = if(kept.n > 0.5, 1, 0)
+    group {
+        z: 99990
+        show: keptv > 0.01 and screen.index == 0
+        opacity: keptv
+        move: 0, -20 * (1 - keptv)
+        body {
+            color: #0c0e10
+            rim: 16%
+            shadow: 0, 10, 28, 50%
+            box { at: W / 2, 52; size: 560, 56; corner: 28 }
+        }
+        box { at: W / 2, 52; size: 560, 56; corner: 28; stroke: 1.3; color: mint; opacity: 45% }
+        // Three drops on a thread, the canvas's wires.
+        ellipse { at: W / 2 - 244, 52; radius: 5; color: mint }
+        ellipse { at: W / 2 - 226, 44; radius: 4; color: mint; opacity: 70% }
+        ellipse { at: W / 2 - 226, 60; radius: 4; color: mint; opacity: 70% }
+        text "Bring back your canvas" { at: W / 2 - 206, 43; anchor: left center; size: 13.5; weight: 650; color: ink }
+        text "1 terminal and 1 wire, with its agent, as you left it" { at: W / 2 - 206, 62; anchor: left center; size: 10.5; color: ink; opacity: 60%; width: 300; lines: 1; show: kept.n < 1.5 and kept.w == 1 }
+        text "1 terminal and {kept.w, 0} wires, with its agent, as you left it" { at: W / 2 - 206, 62; anchor: left center; size: 10.5; color: ink; opacity: 60%; width: 300; lines: 1; show: kept.n < 1.5 and kept.w != 1 }
+        text "{kept.n, 0} terminals and 1 wire, with their agents, as you left them" { at: W / 2 - 206, 62; anchor: left center; size: 10.5; color: ink; opacity: 60%; width: 300; lines: 1; show: kept.n > 1.5 and kept.w == 1 }
+        text "{kept.n, 0} terminals and {kept.w, 0} wires, with their agents, as you left them" { at: W / 2 - 206, 62; anchor: left center; size: 10.5; color: ink; opacity: 60%; width: 300; lines: 1; show: kept.n > 1.5 and kept.w != 1 }
+        zone box kept_go { at: W / 2 + 170, 52; size: 128, 34; cursor: pointer; active: kept.n > 0.5; label: "Bring back your canvas"; role: button }
+        box { at: W / 2 + 170, 52; size: 128, 34; corner: 17; color: mint; opacity: 85% + 15% * kept_go.hover }
+        text "Bring back" { at: W / 2 + 170, 52; anchor: center; size: 12; weight: 650; color: #0c1a15 }
+        zone ellipse kept_no { at: W / 2 + 254, 52; radius: 13; cursor: pointer; active: kept.n > 0.5; label: "Leave it"; role: button }
+        ellipse { at: W / 2 + 254, 52; radius: 13; color: ink; opacity: 8% + 10% * kept_no.hover }
+        box { at: W / 2 + 254, 52; size: 9, 1.6; corner: 0.8; rotate: 45deg; color: ink; opacity: 70% }
+        box { at: W / 2 + 254, 52; size: 9, 1.6; corner: 0.8; rotate: -45deg; color: ink; opacity: 70% }
+    }
+    on press kept_go {
+        launch "pleamar-wm link restore"
+        kept.n = 0
+    }
+    on press kept_no {
+        launch "pleamar-wm link restore --dismiss"
+        kept.n = 0
+    }
+
     // ── a computer-use agent's cursors (`agent on` in session.conf) ──
     // An agent (Cua Driver) drives the windows with a pointer of its own: the
     // compositor says where each of its cursors is, on which monitor, and

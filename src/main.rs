@@ -24,6 +24,7 @@ mod session;
 mod term;
 mod link;
 mod mcp;
+mod keep;
 
 fn main() {
     // Called as the user's shell (the session's `SHELL`): the layer between
