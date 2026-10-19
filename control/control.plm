@@ -21,8 +21,8 @@ scene Control {
     let px = 264
     let aw = max(W - px - 60, 240)
     // The layouts in as many to a row as fit, and the card as tall as they need.
-    let lcols = clamp(floor((aw + 8) / 82), 1, 10)
-    let lrows = ceil(10 / lcols)
+    let lcols = clamp(floor((aw + 8) / 82), 1, 9)
+    let lrows = ceil(9 / lcols)
     let lcard = 60 + lrows * 84
     // The models, three to a row on a wide window, fewer on a narrow one.
     let bcols = clamp(floor((aw + 10) / 240), 1, 3)
@@ -32,7 +32,7 @@ scene Control {
     fact has.1 = false
     fact has.2 = false
     fact has.3 = false
-    fact sel.0 = -1                // its layout now: 0…7, 8 free, 9 canvas; -1 not known yet
+    fact sel.0 = -1                // its layout now: 0…7, 8 free (a canvas); -1 not known yet
     fact sel.1 = -1
     fact sel.2 = -1
     fact sel.3 = -1
@@ -150,7 +150,7 @@ scene Control {
                 text pick(k, mon.0, mon.1, mon.2, mon.3) { at: px + 54, y + 27; anchor: left center; size: 15; weight: 650; color: ink }
                 text pick(k, now.0, now.1, now.2, now.3) { at: W - 46, y + 27; anchor: right center; size: 12; color: mint }
 
-                repeat l in 0..10 {
+                repeat l in 0..9 {
                     let tx = px + 16 + mod(l, lcols) * 82
                     let ty = y + 48 + floor(l / lcols) * 84
                     group {
@@ -206,15 +206,11 @@ scene Control {
                             box { from: ix + 24, iy + 16; size: 11, 14; corner: 2; color: ic; show: l == 7 }
                             box { from: ix + 37, iy + 16; size: 11, 6; corner: 1.5; color: ic; show: l == 7 }
                             box { from: ix + 37, iy + 24; size: 11, 6; corner: 1.5; color: ic; show: l == 7 }
-                            // free: two windows, one over the other
-                            box { from: ix + 2, iy + 2; size: 30, 20; corner: 3; color: ic; opacity: 55%; show: l == 8 }
-                            box { from: ix + 16, iy + 9; size: 30, 20; corner: 3; color: ic; show: l == 8 }
-                            box { from: ix + 16, iy + 9; size: 30, 4; corner: 2; color: mint; opacity: 80%; show: l == 8 }
-                            // canvas: windows here and there on a plane, one going off it
-                            box { from: ix, iy + 1; size: 20, 13; corner: 3; color: ic; show: l == 9 }
-                            box { from: ix + 23, iy + 5; size: 16, 20; corner: 3; color: ic; show: l == 9 }
-                            box { from: ix + 5, iy + 18; size: 14, 11; corner: 2.5; color: ic; show: l == 9 }
-                            box { from: ix + 42, iy + 15; size: 6, 13; corner: 2; color: ic; opacity: 45%; show: l == 9 }
+                            // free, a canvas: windows here and there on a plane, one going off it
+                            box { from: ix, iy + 1; size: 20, 13; corner: 3; color: ic; show: l == 8 }
+                            box { from: ix + 23, iy + 5; size: 16, 20; corner: 3; color: ic; show: l == 8 }
+                            box { from: ix + 5, iy + 18; size: 14, 11; corner: 2.5; color: ic; show: l == 8 }
+                            box { from: ix + 42, iy + 15; size: 6, 13; corner: 2; color: ic; opacity: 45%; show: l == 8 }
                         }
                         // Its name.
                         text "Leader" { at: tx + 37, ty + 60; anchor: center; size: 10.5; weight: 600; color: mix(dim, ink, on); show: l == 0 }
@@ -226,7 +222,6 @@ scene Control {
                         text "Marea" { at: tx + 37, ty + 60; anchor: center; size: 10.5; weight: 600; color: mix(dim, ink, on); show: l == 6 }
                         text "Fractal" { at: tx + 37, ty + 60; anchor: center; size: 10.5; weight: 600; color: mix(dim, ink, on); show: l == 7 }
                         text "Free" { at: tx + 37, ty + 60; anchor: center; size: 10.5; weight: 600; color: mix(dim, ink, on); show: l == 8 }
-                        text "Canvas" { at: tx + 37, ty + 60; anchor: center; size: 10.5; weight: 600; color: mix(dim, ink, on); show: l == 9 }
                     }
                 }
             }
@@ -242,37 +237,37 @@ scene Control {
     let pfh = pfw * 9 / 16
     let pfx = px - 4
         prop pv.0.x = 0 ~calm
-        follow pv.0.x = pick(max(shown.l, 0), 0.0000, 0.0000, 0.0000, 0.0000, 0.4400, -0.3000, 0.0000, 0.0000, 0.0400, 0.0600)
+        follow pv.0.x = pick(max(shown.l, 0), 0.0000, 0.0000, 0.0000, 0.0000, 0.4400, -0.3000, 0.0000, 0.0000, 0.0600)
         prop pv.0.y = 0 ~calm
-        follow pv.0.y = pick(max(shown.l, 0), 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0600, 0.0800)
+        follow pv.0.y = pick(max(shown.l, 0), 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0800)
         prop pv.0.w = 0 ~calm
-        follow pv.0.w = pick(max(shown.l, 0), 0.5600, 0.2500, 1.0000, 0.5000, 0.5600, 0.5000, 0.4800, 0.5000, 0.5000, 0.3400)
+        follow pv.0.w = pick(max(shown.l, 0), 0.5600, 0.2500, 1.0000, 0.5000, 0.5600, 0.5000, 0.4800, 0.5000, 0.3400)
         prop pv.0.h = 0 ~calm
-        follow pv.0.h = pick(max(shown.l, 0), 1.0000, 1.0000, 0.2500, 0.5000, 1.0000, 1.0000, 1.0000, 1.0000, 0.5500, 0.3800)
+        follow pv.0.h = pick(max(shown.l, 0), 1.0000, 1.0000, 0.2500, 0.5000, 1.0000, 1.0000, 1.0000, 1.0000, 0.3800)
         prop pv.1.x = 0 ~calm
-        follow pv.1.x = pick(max(shown.l, 0), 0.5600, 0.2500, 0.0000, 0.5000, 0.0000, 0.2000, 0.4800, 0.5000, 0.3000, 0.4400)
+        follow pv.1.x = pick(max(shown.l, 0), 0.5600, 0.2500, 0.0000, 0.5000, 0.0000, 0.2000, 0.4800, 0.5000, 0.4400)
         prop pv.1.y = 0 ~calm
-        follow pv.1.y = pick(max(shown.l, 0), 0.0000, 0.0000, 0.2500, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.2200, 0.0400)
+        follow pv.1.y = pick(max(shown.l, 0), 0.0000, 0.0000, 0.2500, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0400)
         prop pv.1.w = 0 ~calm
-        follow pv.1.w = pick(max(shown.l, 0), 0.4400, 0.2500, 1.0000, 0.5000, 0.4400, 0.5000, 0.2000, 0.5000, 0.4600, 0.2800)
+        follow pv.1.w = pick(max(shown.l, 0), 0.4400, 0.2500, 1.0000, 0.5000, 0.4400, 0.5000, 0.2000, 0.5000, 0.2800)
         prop pv.1.h = 0 ~calm
-        follow pv.1.h = pick(max(shown.l, 0), 0.3333, 1.0000, 0.2500, 0.5000, 0.3333, 1.0000, 1.0000, 0.5000, 0.5000, 0.3400)
+        follow pv.1.h = pick(max(shown.l, 0), 0.3333, 1.0000, 0.2500, 0.5000, 0.3333, 1.0000, 1.0000, 0.5000, 0.3400)
         prop pv.2.x = 0 ~calm
-        follow pv.2.x = pick(max(shown.l, 0), 0.5600, 0.5000, 0.0000, 0.0000, 0.0000, 0.7000, 0.6800, 0.5000, 0.5500, 0.1400)
+        follow pv.2.x = pick(max(shown.l, 0), 0.5600, 0.5000, 0.0000, 0.0000, 0.0000, 0.7000, 0.6800, 0.5000, 0.1400)
         prop pv.2.y = 0 ~calm
-        follow pv.2.y = pick(max(shown.l, 0), 0.3333, 0.0000, 0.5000, 0.5000, 0.3333, 0.0000, 0.0000, 0.5000, 0.1200, 0.5400)
+        follow pv.2.y = pick(max(shown.l, 0), 0.3333, 0.0000, 0.5000, 0.5000, 0.3333, 0.0000, 0.0000, 0.5000, 0.5400)
         prop pv.2.w = 0 ~calm
-        follow pv.2.w = pick(max(shown.l, 0), 0.4400, 0.2500, 1.0000, 0.5000, 0.4400, 0.5000, 0.1600, 0.2500, 0.4000, 0.2600)
+        follow pv.2.w = pick(max(shown.l, 0), 0.4400, 0.2500, 1.0000, 0.5000, 0.4400, 0.5000, 0.1600, 0.2500, 0.2600)
         prop pv.2.h = 0 ~calm
-        follow pv.2.h = pick(max(shown.l, 0), 0.3333, 1.0000, 0.2500, 0.5000, 0.3333, 1.0000, 1.0000, 0.5000, 0.4200, 0.3000)
+        follow pv.2.h = pick(max(shown.l, 0), 0.3333, 1.0000, 0.2500, 0.5000, 0.3333, 1.0000, 1.0000, 0.5000, 0.3000)
         prop pv.3.x = 0 ~calm
-        follow pv.3.x = pick(max(shown.l, 0), 0.5600, 0.7500, 0.0000, 0.5000, 0.0000, 1.2000, 0.8400, 0.7500, 0.1800, 0.4600)
+        follow pv.3.x = pick(max(shown.l, 0), 0.5600, 0.7500, 0.0000, 0.5000, 0.0000, 1.2000, 0.8400, 0.7500, 0.4600)
         prop pv.3.y = 0 ~calm
-        follow pv.3.y = pick(max(shown.l, 0), 0.6667, 0.0000, 0.7500, 0.5000, 0.6667, 0.0000, 0.0000, 0.5000, 0.5000, 0.4600)
+        follow pv.3.y = pick(max(shown.l, 0), 0.6667, 0.0000, 0.7500, 0.5000, 0.6667, 0.0000, 0.0000, 0.5000, 0.4600)
         prop pv.3.w = 0 ~calm
-        follow pv.3.w = pick(max(shown.l, 0), 0.4400, 0.2500, 1.0000, 0.5000, 0.4400, 0.5000, 0.1600, 0.2500, 0.4200, 0.3200)
+        follow pv.3.w = pick(max(shown.l, 0), 0.4400, 0.2500, 1.0000, 0.5000, 0.4400, 0.5000, 0.1600, 0.2500, 0.3200)
         prop pv.3.h = 0 ~calm
-        follow pv.3.h = pick(max(shown.l, 0), 0.3333, 1.0000, 0.2500, 0.5000, 0.3333, 1.0000, 1.0000, 0.5000, 0.4200, 0.3600)
+        follow pv.3.h = pick(max(shown.l, 0), 0.3333, 1.0000, 0.2500, 0.5000, 0.3333, 1.0000, 1.0000, 0.5000, 0.3600)
     group {
         show: page == 0 and monitors > 0 and pfh > 120
         text "Preview" { at: px, pfy - 14; size: 12.5; weight: 650; color: dim }
@@ -336,20 +331,20 @@ scene Control {
             color: card
             rim: 12%
             shadow: 0, 10, 26, 35%
-            box { from: px - 4, 104; size: W - px - 24, 566; corner: 16 }
+            box { from: px - 4, 104; size: W - px - 24, 512; corner: 16 }
         }
         column { at: px + 18, 124; gap: 0
-            repeat r in 0..10 {
+            repeat r in 0..9 {
                 group {
                     size: W - px - 60, 54
-                    box { from: 0, 53; size: W - px - 60, 1; color: ink; opacity: if(r < 9, 6%, 0) }
+                    box { from: 0, 53; size: W - px - 60, 1; color: ink; opacity: if(r < 8, 6%, 0) }
                     Key(0, 14, 150)
-                    text pick(r, "Super + arrows", "Super + Shift + arrows", "Super + −  /  +", "Super + wheel · pinch", "Super + Tab", "Super + W", "Super + Shift + W", "Super + V", "Super + 1 … 9", "Carry a window") { at: 75, 26; anchor: center; size: 11.5; weight: 650; color: ink }
-                    text pick(r, "The keyboard to the window that way, on any monitor. Scrolling glides to it; fractal, zoomed in, takes the camera there.", "Moves the window with the keyboard: to lead, to the other monitor, or along the order.", "The leader or the columns narrower and wider. On a fractal monitor or a canvas: zoom out and in.", "Fractal and canvas: zoom, the wheel where the pointer is. Scrolling: the wheel goes along the columns. Elsewhere, pinching in shows everything at a glance.", "Everything at a glance: every monitor's pools, to pick or carry.", "This monitor tiled or free, and back.", "This monitor a canvas, and back: drag the empty plane to move about, the wheel to zoom; Super + 0, all of its windows in sight.", "The window with the keyboard floats over the tiles, and back.", "That pool of the monitor under the mouse (with Shift, the window goes there).", "Fractal: on another's edge it docks there; in its middle the two make a group. Elsewhere they change places; free, an edge or a corner takes that half or quarter; on a canvas, near another's edge it takes its side.") { at: 172, 26; anchor: left center; size: 12; color: dim; width: W - px - 250; lines: 2 }
+                    text pick(r, "Super + arrows", "Super + Shift + arrows", "Super + −  /  +", "Super + wheel · pinch", "Super + Tab", "Super + W", "Super + V", "Super + 1 … 9", "Carry a window") { at: 75, 26; anchor: center; size: 11.5; weight: 650; color: ink }
+                    text pick(r, "The keyboard to the window that way, on any monitor. Scrolling glides to it; fractal, zoomed in, takes the camera there.", "Moves the window with the keyboard: to lead, to the other monitor, or along the order.", "The leader or the columns narrower and wider. On a fractal monitor or a canvas: zoom out and in.", "Fractal and canvas: zoom, the wheel where the pointer is. Scrolling: the wheel goes along the columns. Elsewhere, pinching in shows everything at a glance.", "Everything at a glance: every monitor's pools, to pick or carry.", "This monitor tiled or free, and back. Free is a canvas: drag the empty plane to move about, the wheel to zoom, Super + 0 to see them all.", "The window with the keyboard floats over the tiles, and back.", "That pool of the monitor under the mouse (with Shift, the window goes there).", "Fractal: on another's edge it docks there; in its middle the two make a group. Elsewhere they change places; free, an edge or a corner takes that half or quarter; on a canvas, near another's edge it takes its side.") { at: 172, 26; anchor: left center; size: 12; color: dim; width: W - px - 250; lines: 2 }
                 }
             }
         }
-        text "Yours go in ~/.config/pleamar/keys.conf: start it with `defaults` to keep these. `pleamar-wm keys` shows them all." { at: px, 694; size: 11.5; color: dim; opacity: 80%; width: W - px - 40; lines: 2 }
+        text "Yours go in ~/.config/pleamar/keys.conf: start it with `defaults` to keep these. `pleamar-wm keys` shows them all." { at: px, 640; size: 11.5; color: dim; opacity: 80%; width: W - px - 40; lines: 2 }
     }
 
     // ── About ──
@@ -365,7 +360,7 @@ scene Control {
         column { at: px + 22, 130; gap: 12
             text "{version}" { size: 15; weight: 650; color: ink }
             text "A Wayland compositor whose window manager is a pleamar scene: every window rides a spring, and the layouts are lines anyone can rewrite (`pleamar-wm scene ~/.config/pleamar/wm`)." { size: 12.5; color: dim; line_height: 1.4; width: min(560, aw) }
-            text "Leader, columns, rows, grid, scrolling, marea, fractal, free, or a canvas: one per monitor, picked here, from the strip at the top while a window is carried, or in session.conf (`layout DP-3 scrolling`)." { size: 12.5; color: dim; line_height: 1.4; width: min(560, aw) }
+            text "Leader, columns, rows, grid, scrolling, marea, fractal, or free —a canvas—: one per monitor, picked here, from the strip at the top while a window is carried, or in session.conf (`layout DP-3 scrolling`)." { size: 12.5; color: dim; line_height: 1.4; width: min(560, aw) }
             text "github.com/k4ditano/pleamar-wm" { size: 12.5; color: mint }
         }
     }

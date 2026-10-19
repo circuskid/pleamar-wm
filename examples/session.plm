@@ -22,11 +22,11 @@
 //   maximize   (no key of its own: bind one) the one with the keyboard takes
 //              all of its monitor —bars and gaps kept— over the others, and back
 //   Super+V    the window with the keyboard floats over the tiles, and back
-//   Super+Shift+W  this monitor a canvas, and back: free, on a plane with no
-//              edges that the monitor looks at through a camera —drag the
-//              empty plane to move about, the wheel to come closer or go
-//              further, Super+-/+ too, Super+0 to see them all—; let go
-//              near another window's edge, it takes its side
+//   Free is a canvas: a plane with no edges that the monitor looks at
+//              through a camera —drag the empty plane to move about, the
+//              wheel to come closer or go further, Super+-/+ too, Super+0 to
+//              see them all—; let go near another window's edge, it takes
+//              its side; a window's port, dragged to another, wires them
 //              (only it: its monitor stays tiled, the others close up)
 //   Super+W    tiled or free windows on this monitor (also from Marea's menu):
 //              free, each window stays where it is left and as big as it is
@@ -616,27 +616,31 @@ scene Session {
     fact cvx.3 = 0
     fact cvy.3 = 0
     fact cvz.3 = 1
-    // A canvas is free: tiled again, it is no canvas; a canvas again starts
-    // where the monitor's windows are, as they are.
+    // Free is a canvas, and a canvas is free: one follows the other. A canvas
+    // starts where the monitor's windows are, as they are.
     on change free.0 while free.0 < 0.5 { cv.0 = 0 }
+    on change free.0 while free.0 > 0.5 { cv.0 = 1 }
     on change cv.0 while cv.0 > 0.5 {
         cvx.0 = 0
         cvy.0 = 0
         cvz.0 = 1
     }
     on change free.1 while free.1 < 0.5 { cv.1 = 0 }
+    on change free.1 while free.1 > 0.5 { cv.1 = 1 }
     on change cv.1 while cv.1 > 0.5 {
         cvx.1 = 0
         cvy.1 = 0
         cvz.1 = 1
     }
     on change free.2 while free.2 < 0.5 { cv.2 = 0 }
+    on change free.2 while free.2 > 0.5 { cv.2 = 1 }
     on change cv.2 while cv.2 > 0.5 {
         cvx.2 = 0
         cvy.2 = 0
         cvz.2 = 1
     }
     on change free.3 while free.3 < 0.5 { cv.3 = 0 }
+    on change free.3 while free.3 > 0.5 { cv.3 = 1 }
     on change cv.3 while cv.3 > 0.5 {
         cvx.3 = 0
         cvy.3 = 0
@@ -673,7 +677,7 @@ scene Session {
     // (Not on an edge that leads to another monitor: let go there, it goes
     // to that one.) 1 left half · 2 right half · 3 all · 4 top left · 5
     // bottom left · 6 top right · 7 bottom right ──
-    let mg.free = dragging >= 0 and (pick(mon, free.0, free.1, free.2, free.3) > 0.5 or dfl) and pick(mon, cv.0, cv.1, cv.2, cv.3) < 0.5
+    let mg.free = dragging >= 0 and (pick(mon, free.0, free.1, free.2, free.3) > 0.5 or dfl)
     let mg.Ws = pick(mon, screen.0.width, screen.1.width, screen.2.width, screen.3.width) - pick(mon, win.reserved.0.left, win.reserved.1.left, win.reserved.2.left, win.reserved.3.left) - pick(mon, win.reserved.0.right, win.reserved.1.right, win.reserved.2.right, win.reserved.3.right)
     let mg.x0 = pick(mon, win.reserved.0.left, win.reserved.1.left, win.reserved.2.left, win.reserved.3.left)
     let mg.top = pick(mon, win.reserved.0.top, win.reserved.1.top, win.reserved.2.top, win.reserved.3.top)
@@ -4161,6 +4165,7 @@ scene Session {
         cvw.n = cvw.n + 1
     }
     fact magnet = 0
+    fact mg.cz = 1
     // (The canvas's magnets: the one let go, its box on the plane, and the
     // nearest offer so far each way.)
     fact cvs.i = -1
@@ -10519,10 +10524,12 @@ scene Session {
             // above it, which takes nothing from the program.
             // With Super held, all of it.
             let whole = keys.super > 0.5 or dragging == i
-            zone box title.$i { from: x.$i + if(whole or F > 0.5, 0, 12), y.$i - if(whole or F > 0.5, 0, gap - 1); size: if(whole, w, if(F > 0.5, w - 76, w - 24)), if(whole, h, if(F > 0.5, tb, gap - 2)); cursor: pointer; active: here and not overview and not win.$i.dialog and (ours or F < 0.5 or whole or win.$i.held > 0.5) and wiring < 0; label: "{win.$i.title}"; role: button; handle: i }
-            // On a canvas, its port: a drop on its title bar, dragged to another
-            // window to wire the two.
-            zone ellipse port.$i { at: x + 18, y + tb / 2; radius: 9; cursor: grab; active: here and not overview and fr and ours and not win.$i.dialog; label: "Wire {win.$i.title} to another window"; role: button }
+            zone box title.$i { from: x.$i + if(whole or F > 0.5, 0, 12) + if(not whole and fr and ours, 32, 0), y.$i - if(whole or F > 0.5, 0, gap - 1); size: if(whole, w, if(F > 0.5, w - 76, w - 24)) - if(not whole and fr and ours, 32, 0), if(whole, h, if(F > 0.5, tb, gap - 2)); cursor: pointer; active: here and not overview and not win.$i.dialog and (ours or F < 0.5 or whole or win.$i.held > 0.5) and wiring < 0; label: "{win.$i.title}"; role: button; handle: i }
+            // Free, its port: a drop at the start of its title bar, dragged to
+            // another window to wire the two. The title bar's own zone starts
+            // after it: under it, a press and the first move of a real mouse
+            // in the same frame carried the window instead.
+            zone ellipse port.$i { at: x + 18, y + tb / 2; radius: 12; cursor: grab; active: here and not overview and fr and ours and not win.$i.dialog; label: "Wire {win.$i.title} to another window"; role: button }
             zone ellipse lead_zone.$i { at: x + w - 40, y + tb / 2; radius: 10; cursor: pointer; active: here and not overview and not win.$i.dialog and ours; label: "Enlarge {win.$i.title}" }
             zone ellipse mini_zone.$i { at: x + w - 60, y + tb / 2; radius: 10; cursor: pointer; active: here and not overview and not win.$i.dialog and Fm > 0.5 and ours; label: "Minimize {win.$i.title}" }
             zone ellipse close_zone.$i { at: x + w - 20, y + tb / 2; radius: 10; cursor: pointer; active: here and not overview and not win.$i.dialog and ours; label: "Close {win.$i.title}" }
@@ -10579,7 +10586,7 @@ scene Session {
                 shader: tide, water while water < 0.999
                 clip box { from: x, y; size: w, h; corner: 12 }
                 box { from: x, y; size: w, tb * hb.$i; color: mix(#1a1e22, #1d2b27, lit.$i); show: hb.$i > 0.01 }
-                text win.$i.title { at: x + 14 + 24 * cvpt.$i, y + tb / 2 - tb * (1 - hb.$i); anchor: left center; size: 12; weight: 500; width: max(w - 110 - 24 * cvpt.$i - 170 * (ag.$i > 0.5) * (w > 400) * hb.$i, 10); lines: 1; color: ink; opacity: (55% + 45% * lit.$i) * hb.$i; show: hb.$i > 0.01 }
+                text win.$i.title { at: x + 14 + 28 * cvpt.$i, y + tb / 2 - tb * (1 - hb.$i); anchor: left center; size: 12; weight: 500; width: max(w - 110 - 24 * cvpt.$i - 170 * (ag.$i > 0.5) * (w > 400) * hb.$i, 10); lines: 1; color: ink; opacity: (55% + 45% * lit.$i) * hb.$i; show: hb.$i > 0.01 }
                 window win.$i { at: x, y + tb * hb.$i; size: w, max(h - tb * hb.$i, 1); ask: ask.w, ask.h - tb * ours; show: drawn and not win.$i.fullscreen and wet <= 0.001 and cold <= 0.001 }
             }
             // The same, in the rain: the window seen through wet glass.
@@ -10588,7 +10595,7 @@ scene Session {
                 shader: rain, wet * pour
                 clip box { from: x, y; size: w, h; corner: 12 }
                 box { from: x, y; size: w, tb * hb.$i; color: mix(#1a1e22, #1d2b27, lit.$i); show: hb.$i > 0.01 }
-                text win.$i.title { at: x + 14 + 24 * cvpt.$i, y + tb / 2 - tb * (1 - hb.$i); anchor: left center; size: 12; weight: 500; width: max(w - 110 - 24 * cvpt.$i - 170 * (ag.$i > 0.5) * (w > 400) * hb.$i, 10); lines: 1; color: ink; opacity: (55% + 45% * lit.$i) * hb.$i; show: hb.$i > 0.01 }
+                text win.$i.title { at: x + 14 + 28 * cvpt.$i, y + tb / 2 - tb * (1 - hb.$i); anchor: left center; size: 12; weight: 500; width: max(w - 110 - 24 * cvpt.$i - 170 * (ag.$i > 0.5) * (w > 400) * hb.$i, 10); lines: 1; color: ink; opacity: (55% + 45% * lit.$i) * hb.$i; show: hb.$i > 0.01 }
                 window win.$i { at: x, y + tb * hb.$i; size: w, max(h - tb * hb.$i, 1); ask: ask.w, ask.h - tb * ours; show: drawn and not win.$i.fullscreen and wet > 0.001 }
             }
             // And in the snow: frosted glass with snow on top.
@@ -10597,7 +10604,7 @@ scene Session {
                 shader: snow, cold
                 clip box { from: x, y; size: w, h; corner: 12 }
                 box { from: x, y; size: w, tb * hb.$i; color: mix(#1a1e22, #1d2b27, lit.$i); show: hb.$i > 0.01 }
-                text win.$i.title { at: x + 14 + 24 * cvpt.$i, y + tb / 2 - tb * (1 - hb.$i); anchor: left center; size: 12; weight: 500; width: max(w - 110 - 24 * cvpt.$i - 170 * (ag.$i > 0.5) * (w > 400) * hb.$i, 10); lines: 1; color: ink; opacity: (55% + 45% * lit.$i) * hb.$i; show: hb.$i > 0.01 }
+                text win.$i.title { at: x + 14 + 28 * cvpt.$i, y + tb / 2 - tb * (1 - hb.$i); anchor: left center; size: 12; weight: 500; width: max(w - 110 - 24 * cvpt.$i - 170 * (ag.$i > 0.5) * (w > 400) * hb.$i, 10); lines: 1; color: ink; opacity: (55% + 45% * lit.$i) * hb.$i; show: hb.$i > 0.01 }
                 window win.$i { at: x, y + tb * hb.$i; size: w, max(h - tb * hb.$i, 1); ask: ask.w, ask.h - tb * ours; show: drawn and not win.$i.fullscreen and cold > 0.001 and wet <= 0.001 }
             }
             // (The wave: two soft crests of light, the second behind the first.)
@@ -10661,11 +10668,26 @@ scene Session {
             group {
                 show: hb.$i > 0.01 and cvpt.$i > 0.01
                 opacity: cvpt.$i * hb.$i
-                ellipse { at: x + 18, y + tb / 2; radius: 6 + 2 * max(port.$i.hover, wiring == i); stroke: 1.2; color: mint; opacity: 35% + 50% * max(port.$i.hover, wiring == i) }
+                // A connector: a ring with a drop in it, and a short stem out to
+                // the left edge, where wires leave from.
+                box { from: x, y + tb / 2 - 1; size: 10, 2; corner: 1; color: mint; opacity: 50% + 40% * max(port.$i.hover, wiring == i) }
+                ellipse { at: x + 18, y + tb / 2; radius: 8 + 2 * max(port.$i.hover, wiring == i); stroke: 1.6; color: mint; opacity: 55% + 40% * max(port.$i.hover, wiring == i) }
                 body {
-                    gradient: radial x + 17, y + tb / 2 - 1.5 radius 6, #e8fff5, mint 45%, #3f8f76
+                    gradient: radial x + 17, y + tb / 2 - 1.5 radius 7, #e8fff5, mint 45%, #3f8f76
                     rim: 35%
-                    ellipse { at: x + 18, y + tb / 2; radius: 2.6 + 1.4 * min(nwired, 1) + 1.2 * max(port.$i.hover, wiring == i) }
+                    ellipse { at: x + 18, y + tb / 2; radius: 3.5 + 1.2 * min(nwired, 1) + 1.5 * max(port.$i.hover, wiring == i) }
+                }
+                // What it does, over it.
+                group {
+                    show: port.$i.hover > 0.01 and wiring < 0
+                    opacity: port.$i.hover
+                    body {
+                        color: #0c0e10
+                        rim: 16%
+                        shadow: 0, 4, 12, 45%
+                        box { from: x + 6, y - 30; size: 196, 24; corner: 12 }
+                    }
+                    text "Drag to another window to wire them" { at: x + 104, y - 18; anchor: center; size: 10.5; color: ink }
                 }
             }
             // Its agent: what and where, dim, and a little basin of water —low
@@ -11081,12 +11103,16 @@ scene Session {
         }
         // …unless it was held against an edge or a corner: the magnet's place.
         on release title.$i while (pick(mon, free.0, free.1, free.2, free.3) > 0.5 or win.$i.floating) and picked < 0 and magnet > 0 {
-            fx.$i = mg.x0 + pick(magnet, gap, gap, gap, gap, gap, gap, 2 * gap + mg.hw, 2 * gap + mg.hw)
-            fy.$i = mg.y0 + pick(magnet, 0, 0, 0, 0, 0, mg.qh + gap, 0, mg.qh + gap)
-            fw.$i = pick(magnet, 240, mg.hw, mg.hw, mg.Ws - 2 * gap, mg.hw, mg.hw, mg.hw, mg.hw)
-            fh.$i = pick(magnet, 140, mg.ah, mg.ah, mg.ah, mg.qh, mg.qh, mg.qh, mg.qh)
+            // (On a canvas, the half or quarter of what the camera sees, on the plane.)
+            mg.cz = if(pick(mon, cv.0, cv.1, cv.2, cv.3) > 0.5, pick(mon, cvz.0, cvz.1, cvz.2, cvz.3), 1)
+            fx.$i = mg.x0 + if(pick(mon, cv.0, cv.1, cv.2, cv.3) > 0.5, pick(mon, cvx.0, cvx.1, cvx.2, cvx.3), 0) + pick(magnet, gap, gap, gap, gap, gap, gap, 2 * gap + mg.hw, 2 * gap + mg.hw) / mg.cz
+            fy.$i = mg.y0 + if(pick(mon, cv.0, cv.1, cv.2, cv.3) > 0.5, pick(mon, cvy.0, cvy.1, cvy.2, cvy.3), 0) + pick(magnet, 0, 0, 0, 0, 0, mg.qh + gap, 0, mg.qh + gap) / mg.cz
+            fw.$i = pick(magnet, 240, mg.hw, mg.hw, mg.Ws - 2 * gap, mg.hw, mg.hw, mg.hw, mg.hw) / mg.cz
+            fh.$i = (pick(magnet, 140, mg.ah, mg.ah, mg.ah, mg.qh, mg.qh, mg.qh, mg.qh) - tb * win.$i.framed) / mg.cz + tb * win.$i.framed
             maxed.$i = if(magnet == 3, 1, 0)
             magnet = 0
+            // (Not taken by another window's side after that.)
+            cvs.i = -1
         }
         // Let go on another one (the one under it, as the others showed).
         on release title.$i while over >= 0 and not crossing { swap win.$i with win(over) }
@@ -11976,22 +12002,10 @@ scene Session {
     on change mon while mon == 3 { launch "pleamar-wm --say marea 'emit pointer_monitor 3'" }
     // Tiled or free, on the monitor under the mouse (Super+W; Marea's menu too).
     event toggle_free
-    on toggle_free while mon == 0 {
-        free.0 = 1 - free.0
-        cv.0 = 0
-    }
-    on toggle_free while mon == 1 {
-        free.1 = 1 - free.1
-        cv.1 = 0
-    }
-    on toggle_free while mon == 2 {
-        free.2 = 1 - free.2
-        cv.2 = 0
-    }
-    on toggle_free while mon == 3 {
-        free.3 = 1 - free.3
-        cv.3 = 0
-    }
+    on toggle_free while mon == 0 { free.0 = 1 - free.0 }
+    on toggle_free while mon == 1 { free.1 = 1 - free.1 }
+    on toggle_free while mon == 2 { free.2 = 1 - free.2 }
+    on toggle_free while mon == 3 { free.3 = 1 - free.3 }
 
     // ── Marea rides a window ──
     // Marea asks (`emit ride`): she leaves her island by the top edge, and here
@@ -12250,23 +12264,12 @@ scene Session {
             box { from: pick(wg.t, x.0, x.1, x.2, x.3, x.4, x.5, x.6, x.7, x.8, x.9, x.10, x.11, x.12, x.13, x.14, x.15) - 3, pick(wg.t, y.0, y.1, y.2, y.3, y.4, y.5, y.6, y.7, y.8, y.9, y.10, y.11, y.12, y.13, y.14, y.15) - 3; size: pick(wg.t, w.0, w.1, w.2, w.3, w.4, w.5, w.6, w.7, w.8, w.9, w.10, w.11, w.12, w.13, w.14, w.15) + 6, pick(wg.t, h.0, h.1, h.2, h.3, h.4, h.5, h.6, h.7, h.8, h.9, h.10, h.11, h.12, h.13, h.14, h.15) + 6; corner: 14; stroke: 2.5; color: mint; opacity: 85%; show: wtgt >= 0 }
         }
     }
+    // (Super+Shift+W, from before free was a canvas: the same as Super+W.)
     event toggle_canvas
-    on toggle_canvas while mon == 0 {
-        cv.0 = 1 - cv.0
-        free.0 = cv.0
-    }
-    on toggle_canvas while mon == 1 {
-        cv.1 = 1 - cv.1
-        free.1 = cv.1
-    }
-    on toggle_canvas while mon == 2 {
-        cv.2 = 1 - cv.2
-        free.2 = cv.2
-    }
-    on toggle_canvas while mon == 3 {
-        cv.3 = 1 - cv.3
-        free.3 = cv.3
-    }
+    on toggle_canvas while mon == 0 { free.0 = 1 - free.0 }
+    on toggle_canvas while mon == 1 { free.1 = 1 - free.1 }
+    on toggle_canvas while mon == 2 { free.2 = 1 - free.2 }
+    on toggle_canvas while mon == 3 { free.3 = 1 - free.3 }
     // Super+0 on a canvas: the camera takes in all of its windows (on the
     // pool it shows), as close as they fit, never closer than as they are.
     // Each one there says its box on the plane (`cvf`), then the camera goes.

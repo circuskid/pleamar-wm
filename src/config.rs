@@ -193,8 +193,8 @@ impl Config {
 /// Writes the `dock` line of session.conf: where the first one was (the
 /// others gone), or at the end. Nothing else of the file changes.
 /// The layouts a monitor can start in, by their number in the scene
-/// (`lay.N`); `free` is no layout: windows where they are left; `canvas`
-/// is free on a plane with no edges, seen through a camera (`cv.N`).
+/// (`lay.N`); `free` is no layout: windows where they are left, on a plane
+/// with no edges seen through a camera; `canvas`, a name it had, is free.
 pub const LAYOUTS: [&str; 10] = ["leader", "columns", "rows", "grid", "leader-right", "scrolling", "marea", "fractal", "free", "canvas"];
 /// Where `free` is in `LAYOUTS`: it and what comes after it are free.
 pub const FREE: usize = 8;
