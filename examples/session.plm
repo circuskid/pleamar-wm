@@ -10473,9 +10473,13 @@ scene Session {
             dir.go: 0 ~0ms
             dir.go: 1 after 16ms
         }
+        // Every window's guard is read before any of them runs, so each one
+        // nearer than none passed, and the last of them won: from the
+        // leftmost of three, Super+Right went to the third. Each one keeps
+        // the best so far as it runs.
         on change dir.n while dir.q > 0 and dirc.score < dir.bs {
-            dir.bs = dirc.score
-            dir.best = i
+            dir.best = if(dirc.score < dir.bs, i, dir.best)
+            dir.bs = min(dir.bs, dirc.score)
         }
         //  Floated off a tiled monitor: it lifts off its tile, smaller, in the
         //  middle of where it was (its tile is the others' now).
@@ -11204,39 +11208,41 @@ scene Session {
         on press seek.$i { focus win.$i }
         // ── canvas magnets: beside the one let go (`cvs.a…`), this one offers
         // it its sides (a gap from it) and its edges in line; the nearest of
-        // them all takes it, if it is within `cvs.b…` ──
+        // them all takes it, if it is within `cvs.b…`. (Every guard is read
+        // before any of them runs: each keeps the nearest so far as it runs,
+        // or the last offer within reach took it, not the nearest.) ──
         let cvs.ok = C and fr and win.$i.open and not win.$i.minimized and ws.here and sc == mon
         on change cvs.n while cvs.i >= 0 and cvs.i != i and cvs.ok and cvs.ay < fy.$i + fh.$i + gap and cvs.ay + cvs.ah > fy.$i - gap and abs(fx.$i + fw.$i + gap - cvs.ax) < cvs.bx {
-            cvs.dx = fx.$i + fw.$i + gap - cvs.ax
-            cvs.bx = abs(fx.$i + fw.$i + gap - cvs.ax)
+            cvs.dx = if(abs(fx.$i + fw.$i + gap - cvs.ax) < cvs.bx, fx.$i + fw.$i + gap - cvs.ax, cvs.dx)
+            cvs.bx = min(cvs.bx, abs(fx.$i + fw.$i + gap - cvs.ax))
         }
         on change cvs.n while cvs.i >= 0 and cvs.i != i and cvs.ok and cvs.ay < fy.$i + fh.$i + gap and cvs.ay + cvs.ah > fy.$i - gap and abs(fx.$i - gap - cvs.ax - cvs.aw) < cvs.bx {
-            cvs.dx = fx.$i - gap - cvs.ax - cvs.aw
-            cvs.bx = abs(fx.$i - gap - cvs.ax - cvs.aw)
+            cvs.dx = if(abs(fx.$i - gap - cvs.ax - cvs.aw) < cvs.bx, fx.$i - gap - cvs.ax - cvs.aw, cvs.dx)
+            cvs.bx = min(cvs.bx, abs(fx.$i - gap - cvs.ax - cvs.aw))
         }
         on change cvs.n while cvs.i >= 0 and cvs.i != i and cvs.ok and cvs.ax < fx.$i + fw.$i + gap and cvs.ax + cvs.aw > fx.$i - gap and abs(fx.$i - cvs.ax) < cvs.bx {
-            cvs.dx = fx.$i - cvs.ax
-            cvs.bx = abs(fx.$i - cvs.ax)
+            cvs.dx = if(abs(fx.$i - cvs.ax) < cvs.bx, fx.$i - cvs.ax, cvs.dx)
+            cvs.bx = min(cvs.bx, abs(fx.$i - cvs.ax))
         }
         on change cvs.n while cvs.i >= 0 and cvs.i != i and cvs.ok and cvs.ax < fx.$i + fw.$i + gap and cvs.ax + cvs.aw > fx.$i - gap and abs(fx.$i + fw.$i - cvs.ax - cvs.aw) < cvs.bx {
-            cvs.dx = fx.$i + fw.$i - cvs.ax - cvs.aw
-            cvs.bx = abs(fx.$i + fw.$i - cvs.ax - cvs.aw)
+            cvs.dx = if(abs(fx.$i + fw.$i - cvs.ax - cvs.aw) < cvs.bx, fx.$i + fw.$i - cvs.ax - cvs.aw, cvs.dx)
+            cvs.bx = min(cvs.bx, abs(fx.$i + fw.$i - cvs.ax - cvs.aw))
         }
         on change cvs.n while cvs.i >= 0 and cvs.i != i and cvs.ok and cvs.ax < fx.$i + fw.$i + gap and cvs.ax + cvs.aw > fx.$i - gap and abs(fy.$i + fh.$i + gap - cvs.ay) < cvs.by {
-            cvs.dy = fy.$i + fh.$i + gap - cvs.ay
-            cvs.by = abs(fy.$i + fh.$i + gap - cvs.ay)
+            cvs.dy = if(abs(fy.$i + fh.$i + gap - cvs.ay) < cvs.by, fy.$i + fh.$i + gap - cvs.ay, cvs.dy)
+            cvs.by = min(cvs.by, abs(fy.$i + fh.$i + gap - cvs.ay))
         }
         on change cvs.n while cvs.i >= 0 and cvs.i != i and cvs.ok and cvs.ax < fx.$i + fw.$i + gap and cvs.ax + cvs.aw > fx.$i - gap and abs(fy.$i - gap - cvs.ay - cvs.ah) < cvs.by {
-            cvs.dy = fy.$i - gap - cvs.ay - cvs.ah
-            cvs.by = abs(fy.$i - gap - cvs.ay - cvs.ah)
+            cvs.dy = if(abs(fy.$i - gap - cvs.ay - cvs.ah) < cvs.by, fy.$i - gap - cvs.ay - cvs.ah, cvs.dy)
+            cvs.by = min(cvs.by, abs(fy.$i - gap - cvs.ay - cvs.ah))
         }
         on change cvs.n while cvs.i >= 0 and cvs.i != i and cvs.ok and cvs.ay < fy.$i + fh.$i + gap and cvs.ay + cvs.ah > fy.$i - gap and abs(fy.$i - cvs.ay) < cvs.by {
-            cvs.dy = fy.$i - cvs.ay
-            cvs.by = abs(fy.$i - cvs.ay)
+            cvs.dy = if(abs(fy.$i - cvs.ay) < cvs.by, fy.$i - cvs.ay, cvs.dy)
+            cvs.by = min(cvs.by, abs(fy.$i - cvs.ay))
         }
         on change cvs.n while cvs.i >= 0 and cvs.i != i and cvs.ok and cvs.ay < fy.$i + fh.$i + gap and cvs.ay + cvs.ah > fy.$i - gap and abs(fy.$i + fh.$i - cvs.ay - cvs.ah) < cvs.by {
-            cvs.dy = fy.$i + fh.$i - cvs.ay - cvs.ah
-            cvs.by = abs(fy.$i + fh.$i - cvs.ay - cvs.ah)
+            cvs.dy = if(abs(fy.$i + fh.$i - cvs.ay - cvs.ah) < cvs.by, fy.$i + fh.$i - cvs.ay - cvs.ah, cvs.dy)
+            cvs.by = min(cvs.by, abs(fy.$i + fh.$i - cvs.ay - cvs.ah))
         }
         on change cvs.go while cvs.go > 0.5 and cvs.i == i {
             fx.$i = fx.$i + cvs.dx
