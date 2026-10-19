@@ -296,17 +296,26 @@ fn since(id: i32, before: usize) -> String {
     }
     let all = read(id, 2000);
     let lines: Vec<&str> = all.lines().collect();
-    let from = match lines.iter().rposition(|l| l.contains("through a wire]")) {
+    let from = match handed_at(&lines) {
         Some(k) => k + 1,
         None => before.saturating_sub(3).min(lines.len()),
     };
     answer(&lines[from..])
 }
 
+/// The last line where the line that says what a task is ends: its
+/// «through a wire]», even when the agent wrapped it over two or three lines
+/// (Codex leaves «through a» on one and «wire]» on the next).
+fn handed_at(lines: &[&str]) -> Option<usize> {
+    let bare = |ls: &[&str]| ls.concat().chars().filter(|c| !c.is_whitespace()).collect::<String>();
+    (0..lines.len()).rev().find(|&k| lines[k].contains(']') && bare(&lines[k.saturating_sub(2)..=k]).contains("throughawire]"))
+}
+
 /// Of what came out after the task, the answer: from the agent's first
 /// message (Claude Code's `●`/`⏺`, Codex's `•`) if it marks them, and
 /// without what an agent draws under it —its input box between two rules,
-/// the prompt in it, the line under it, «done in 7s»—. At most 80 lines.
+/// or Codex's prompt with no rules and the lines under it, «done in 7s»,
+/// «Worked for 2s»—. At most 80 lines.
 fn answer(lines: &[&str]) -> String {
     let rule = |l: &str| {
         let t = l.trim();
@@ -321,11 +330,21 @@ fn answer(lines: &[&str]) -> String {
             break;
         }
     }
-    let body = &lines[..end];
-    let start = body.iter().position(|l| matches!(l.trim_start().chars().next(), Some('●' | '⏺' | '•'))).unwrap_or(0);
-    let mut kept: Vec<&str> = body[start..].iter().map(|l| l.trim_end()).collect();
-    // Below the answer: blank lines, and how long it thought (`✻ Cogitated for 7s · done 20:25`).
-    while kept.last().is_some_and(|l| l.is_empty() || matches!(l.trim_start().chars().next(), Some('✻' | '✳' | '✶' | '✽' | '✢' | '·'))) {
+    let marked = |l: &str| matches!(l.trim_start().chars().next(), Some('●' | '⏺' | '•'));
+    let start = lines[..end].iter().position(|l| marked(l));
+    // Codex draws its prompt (`› Ask Codex to do anything`) with no rules round it.
+    if let Some(s) = start {
+        if let Some(p) = lines[s..end].iter().position(|l| matches!(l.chars().next(), Some('›' | '❯'))) {
+            end = s + p;
+        }
+    }
+    let mut kept: Vec<&str> = lines[start.unwrap_or(0)..end].iter().map(|l| l.trim_end()).collect();
+    // Below the answer: blank lines, and how long it thought (`✻ Cogitated for 7s · done 20:25`,
+    // Codex's `─ Worked for 2s ───`).
+    while kept.last().is_some_and(|l| {
+        let t = l.trim_start();
+        t.is_empty() || t.starts_with("Worked for") || matches!(t.chars().next(), Some('✻' | '✳' | '✶' | '✽' | '✢' | '·' | '─'))
+    }) {
         kept.pop();
     }
     let keep = kept.len().saturating_sub(80);
@@ -947,6 +966,46 @@ mod tests {
     fn an_answer_of_several_lines_keeps_them_all() {
         let lines = ["task tail", "", "● First line.", "  second line", "", "● And a last word.", "", "────────────────────────", "❯ ", "────────────────────────"];
         assert_eq!(answer(&lines), "● First line.\n  second line\n\n● And a last word.");
+    }
+
+    #[test]
+    fn a_codex_answer_comes_without_its_prompt_and_footer() {
+        let screen = "  >_ OpenAI Codex (v0.161.0)
+     ~
+
+
+› [a task from claude in window 0 «◑ Saludo a Codex», through a
+  wire] It is in the pasted text: do it, and end with your
+  answer.Salúdame, por favor: respóndeme con un saludo corto.
+
+
+• ¡Hola! 👋
+
+  Worked for 2s • 22:02
+
+
+
+› Ask Codex to do anything
+
+  GPT-6-Luna high · ~ · Saluda brevemente
+  ← for agents · ? for shortcuts";
+        let lines: Vec<&str> = screen.lines().collect();
+        let from = handed_at(&lines).expect("the wrapped line that says what the task is");
+        assert_eq!(lines[from], "  wire] It is in the pasted text: do it, and end with your");
+        assert_eq!(answer(&lines[from + 1..]), "• ¡Hola! 👋");
+    }
+
+    #[test]
+    fn the_line_that_says_what_a_task_is_is_found_on_one_line_too() {
+        let lines = ["old", "› [a task from claude in window 0 «x», through a wire] It is in the pasted text", "• hi"];
+        assert_eq!(handed_at(&lines), Some(1));
+        assert_eq!(handed_at(&["nothing", "here"]), None);
+    }
+
+    #[test]
+    fn a_codex_answer_with_a_rule_under_it_loses_the_rule() {
+        let lines = ["• Done: three files.", "", "─ Worked for 1m 02s ──────────────────────", "", "› Ask Codex to do anything"];
+        assert_eq!(answer(&lines), "• Done: three files.");
     }
 
     #[test]
