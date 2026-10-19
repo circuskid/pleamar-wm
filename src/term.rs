@@ -81,10 +81,31 @@ fn shell_link() -> Option<(String, String)> {
     Some((link, real))
 }
 
+/// The link that stands for that real shell in the session's terminals, if
+/// the session made one: what a terminal started from inside a layer (whose
+/// `SHELL` is the real one again) needs to get a layer of its own.
+pub fn link_of(real: &str) -> Option<String> {
+    let name = std::path::Path::new(real).file_name()?.to_str()?;
+    let link = format!("{}/{name}", link_dir());
+    std::fs::symlink_metadata(&link).is_ok().then_some(link)
+}
+
+/// In a program's environment: its window opens without taking the
+/// keyboard (`link spawn`'s terminal). The layer takes it out before the
+/// shell starts, so what is started from that terminal takes it as ever.
+pub const QUIET: &str = "PLEAMAR_OPEN_QUIET";
+
+/// Whether that process was started with `QUIET`.
+pub fn started_quiet(pid: u32) -> bool {
+    pid != 0 && std::fs::read(format!("/proc/{pid}/environ")).is_ok_and(|e| e.split(|b| *b == 0).any(|v| v == format!("{QUIET}=1").as_bytes()))
+}
+
 /// Called as the shell (`argv[0]` is the real shell's name, `-fish` for a
 /// login one): the layer, or the shell itself. Never returns then.
 pub fn as_shell() {
     let Some(real) = std::env::var("PLEAMAR_REAL_SHELL").ok().filter(|s| !s.is_empty()) else { return };
+    // SAFETY: called first thing in main, before any other thread starts.
+    unsafe { std::env::remove_var(QUIET) };
     let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
     let Some(zero) = args.first().and_then(|a| std::path::Path::new(a).file_name()).and_then(|n| n.to_str()) else { return };
     let real_name = std::path::Path::new(&real).file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -148,6 +169,63 @@ impl vt100::Callbacks for Seen {
     }
     fn audible_bell(&mut self, _: &mut vt100::Screen) {
         self.bells += 1;
+    }
+}
+
+/// Kitty's text sizing (`OSC 66 ; w=1 ; á ST`), which `vt100` does not know
+/// and drops, text and all: opencode, in kitty, writes every letter that is
+/// not ASCII that way, and its screen was read without them, each line moved
+/// a cell to the left from there. Turned into the text it says, as the
+/// bytes come (a sequence may be cut between two reads).
+#[derive(Default)]
+struct SizedText {
+    // A sequence begun and not ended yet: from its ESC.
+    held: Vec<u8>,
+}
+
+impl SizedText {
+    fn plain(&mut self, bytes: &[u8]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(bytes.len());
+        for &b in bytes {
+            if self.held.is_empty() {
+                if b == 0x1b {
+                    self.held.push(b);
+                } else {
+                    out.push(b);
+                }
+                continue;
+            }
+            self.held.push(b);
+            let h = &self.held;
+            // Only an OSC is held: anything else goes on at once.
+            if h.len() == 2 && h[1] != b']' {
+                out.append(&mut self.held);
+                continue;
+            }
+            let end = match h.len() {
+                0..=2 => None,
+                _ if b == 0x07 => Some(h.len() - 1),
+                _ if b == b'\\' && h[h.len() - 2] == 0x1b => Some(h.len() - 2),
+                _ => None,
+            };
+            // An ESC that does not end it: not one to read either.
+            if end.is_none() && h.len() > 3 && h[h.len() - 2] == 0x1b {
+                out.append(&mut self.held);
+                continue;
+            }
+            if let Some(end) = end {
+                let body = &h[2..end];
+                match body.strip_prefix(b"66;").and_then(|r| r.iter().position(|c| *c == b';').map(|k| &r[k + 1..])) {
+                    Some(text) => out.extend_from_slice(text),
+                    None => out.extend_from_slice(h),
+                }
+                self.held.clear();
+            } else if h.len() > 4096 {
+                // No end in sight: not one to read, then.
+                out.append(&mut self.held);
+            }
+        }
+        out
     }
 }
 
@@ -310,13 +388,14 @@ fn layer(real: &str, args: &[std::ffi::OsString]) -> Result<(), String> {
             let s = shared.clone();
             let behind = behind.clone();
             std::thread::spawn(move || {
+                let mut sized = SizedText::default();
                 while let Ok(mut bytes) = kept.recv() {
                     // All that has come meanwhile, at once.
                     while let Ok(more) = kept.try_recv() {
                         bytes.extend_from_slice(&more);
                     }
                     if let Ok(mut p) = s.screen.lock() {
-                        p.process(&bytes);
+                        p.process(&sized.plain(&bytes));
                     }
                     behind.fetch_sub(bytes.len(), std::sync::atomic::Ordering::Relaxed);
                 }
@@ -941,5 +1020,20 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         assert_eq!(last_lines(&mut p, 2), "four\nfive");
         p.process(b"\x1b]2;\xe2\x9c\xb3 here\x07");
         assert_eq!(p.callbacks().title, "✳ here");
+    }
+
+    #[test]
+    fn kittys_sized_text_is_read_as_its_text() {
+        let mut p = vt100::Parser::new_with_callbacks(nz(3), nz(30), HISTORY, Seen { title: String::new(), bells: 0 });
+        let mut sized = SizedText::default();
+        // As opencode writes «Salúdame qué», cut in the middle of a sequence,
+        // one ended by BEL and one by ESC \.
+        let all = "Sal\x1b]66;w=1;ú\x07dame qu\x1b]66;w=1;é\x1b\\ ok".as_bytes();
+        for part in all.chunks(7) {
+            p.process(&sized.plain(part));
+        }
+        p.process(&sized.plain(b"\r\n\x1b]2;title\x07\x1b[1mbold\x1b[0m"));
+        assert_eq!(last_lines(&mut p, 2), "Salúdame qué ok\nbold");
+        assert_eq!(p.callbacks().title, "title");
     }
 }

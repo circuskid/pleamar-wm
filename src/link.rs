@@ -315,7 +315,10 @@ fn handed_at(lines: &[&str]) -> Option<usize> {
 /// message (Claude Code's `●`/`⏺`, Codex's `•`) if it marks them, and
 /// without what an agent draws under it —its input box between two rules,
 /// or Codex's prompt with no rules and the lines under it, «done in 7s»,
-/// «Worked for 2s»—. At most 80 lines.
+/// «Worked for 2s»—. opencode marks nothing, but boxes what it is told and
+/// its input (`┃`): its answer is what comes between them, without how long
+/// it thought («+ Thought: 526ms») and the line that says who answered and
+/// in how long («Build  DeepSeek V4.1 Flash Free   2.0s»). At most 80 lines.
 fn answer(lines: &[&str]) -> String {
     let rule = |l: &str| {
         let t = l.trim();
@@ -338,12 +341,23 @@ fn answer(lines: &[&str]) -> String {
             end = s + p;
         }
     }
-    let mut kept: Vec<&str> = lines[start.unwrap_or(0)..end].iter().map(|l| l.trim_end()).collect();
+    let boxed = |l: &str| matches!(l.trim_start().chars().next(), Some('┃' | '╹' | '╻'));
+    let mut from = start.unwrap_or(0);
+    if start.is_none() && lines[..end].iter().any(|l| boxed(l)) {
+        // opencode: past the box of what it was told, up to its input's.
+        from = lines[..end].iter().position(|l| !boxed(l) && !l.trim().is_empty()).unwrap_or(end);
+        end = lines[from..end].iter().position(|l| boxed(l)).map_or(end, |k| from + k);
+    }
+    let took = |l: &str| {
+        let last = l.split_whitespace().last().unwrap_or("");
+        l.split_whitespace().count() >= 3 && last.ends_with('s') && last.trim_end_matches(['m', 's']).parse::<f64>().is_ok()
+    };
+    let mut kept: Vec<&str> = lines[from..end].iter().map(|l| l.trim_end()).filter(|l| !l.trim_start().starts_with("+ Thought")).skip_while(|l| l.is_empty()).collect();
     // Below the answer: blank lines, and how long it thought (`✻ Cogitated for 7s · done 20:25`,
     // Codex's `─ Worked for 2s ───`).
     while kept.last().is_some_and(|l| {
         let t = l.trim_start();
-        t.is_empty() || t.starts_with("Worked for") || matches!(t.chars().next(), Some('✻' | '✳' | '✶' | '✽' | '✢' | '·' | '─'))
+        t.is_empty() || t.starts_with("Worked for") || matches!(t.chars().next(), Some('✻' | '✳' | '✶' | '✽' | '✢' | '·' | '─')) || (start.is_none() && took(t))
     }) {
         kept.pop();
     }
@@ -775,11 +789,20 @@ pub(crate) fn pid_of_slot(slot: usize) -> Option<u32> {
 }
 
 /// A program the session starts as it starts its own: loose from the caller.
-fn start(exe: &str, cwd: &str) -> Result<u32, String> {
+/// `quiet`: its window opens without taking the person's keyboard.
+fn start(exe: &str, cwd: &str, quiet: bool) -> Result<u32, String> {
     let mut c = std::process::Command::new(exe);
     c.current_dir(cwd).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
-    // Not as the caller's terminal: the new one gets a layer of its own.
+    // Not as the caller's terminal: the new one gets a layer of its own. Inside
+    // the caller's layer `SHELL` is the real shell again; the new terminal
+    // starts the session's link to it, as one the session starts does.
     c.env_remove("PLEAMAR_TERMINAL").env_remove("PLEAMAR_TTY");
+    if let Some(link) = std::env::var("PLEAMAR_REAL_SHELL").ok().and_then(|real| crate::term::link_of(&real)) {
+        c.env("SHELL", link);
+    }
+    if quiet {
+        c.env(crate::term::QUIET, "1");
+    }
     use std::os::unix::process::CommandExt;
     c.process_group(0);
     c.spawn().map(|ch| ch.id()).map_err(|e| format!("{exe}: {e}"))
@@ -787,10 +810,10 @@ fn start(exe: &str, cwd: &str) -> Result<u32, String> {
 
 /// A terminal opened for an agent: the same program as the caller's (kitty,
 /// Alacritty…), in that folder. Its window's place and its layer, once both
-/// are there.
-pub(crate) fn open_terminal(exe: &str, cwd: &str) -> Result<(usize, i32), String> {
+/// are there. `quiet`: the keyboard stays where the person has it.
+pub(crate) fn open_terminal(exe: &str, cwd: &str, quiet: bool) -> Result<(usize, i32), String> {
     let before: Vec<usize> = windows()?.iter().map(|w| w.slot).collect();
-    let pid = start(exe, cwd)?;
+    let pid = start(exe, cwd, quiet)?;
     let deadline = Instant::now() + Duration::from_secs(20);
     while Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(300));
@@ -842,7 +865,8 @@ fn spawn(rest: &[String]) -> Result<String, String> {
     let cwd = flag("--folder").map(|f| f.replacen('~', &std::env::var("HOME").unwrap_or_default(), 1)).unwrap_or_else(|| h.info.get("cwd").cloned().unwrap_or_else(|| ".".into()));
     let terminal = h.info.get("terminal").and_then(|t| t.parse::<u32>().ok()).ok_or("this terminal's program is not known")?;
     let exe = std::fs::read_link(format!("/proc/{terminal}/exe")).map(|p| p.display().to_string()).map_err(|e| format!("this terminal's program: {e}"))?;
-    let (slot, id) = open_terminal(&exe, &cwd)?;
+    // Beside the caller, for the caller: the person goes on typing where they were.
+    let (slot, id) = open_terminal(&exe, &cwd, true)?;
     // Beside the caller's window, on the plane, as big.
     let place: Vec<f64> = say(&[format!("get fx.{}", h.slot), format!("get fy.{}", h.slot), format!("get fw.{}", h.slot), format!("get fh.{}", h.slot)]).iter().filter_map(|v| v.trim().parse().ok()).collect();
     if let [x, y, w, hh] = place[..] {
@@ -1006,6 +1030,31 @@ mod tests {
     fn a_codex_answer_with_a_rule_under_it_loses_the_rule() {
         let lines = ["• Done: three files.", "", "─ Worked for 1m 02s ──────────────────────", "", "› Ask Codex to do anything"];
         assert_eq!(answer(&lines), "• Done: three files.");
+    }
+
+    #[test]
+    fn an_opencode_answer_comes_from_between_its_boxes() {
+        let screen = "  ┃  [a task from claude in window 0 «◑ Saludo a Codex», through a wire] It is in the
+  ┃  pasted text: do it, and end with your answer.Hola opencode: soy Claude, en la
+  ┃  terminal de al lado. Salúdame con un saludo corto y dime qué modelo eres, en una
+  ┃  frase.
+  ┃
+
+     + Thought: 526ms
+
+     Hola Claude! Soy deepseek-v4.1-flash-free, corriendo como opencode.
+
+        Build  DeepSeek V4.1 Flash Free   2.0s
+
+  ┃
+  ┃
+  ┃
+  ┃  Build ▀ DeepSeek V4.1 Flash Free OpenCode
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /home/abel/Proyectos/pleamar                                 13.0K (7%)  ctrl+p commands";
+        let lines: Vec<&str> = screen.lines().collect();
+        let from = handed_at(&lines).expect("its box's first line") + 1;
+        assert_eq!(answer(&lines[from..]), "     Hola Claude! Soy deepseek-v4.1-flash-free, corriendo como opencode.");
     }
 
     #[test]

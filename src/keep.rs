@@ -190,7 +190,7 @@ pub fn restore(dismiss: bool) -> Result<String, String> {
     for w in kept["windows"].as_array().into_iter().flatten() {
         let program = w["program"].as_str().unwrap_or("");
         let folder = w["folder"].as_str().filter(|f| std::path::Path::new(f).is_dir()).map(str::to_owned).unwrap_or_else(|| std::env::var("HOME").unwrap_or_default());
-        let Ok((slot, id)) = crate::link::open_terminal(program, &folder) else { continue };
+        let Ok((slot, id)) = crate::link::open_terminal(program, &folder, false) else { continue };
         opened += 1;
         new_slot.insert(w["slot"].as_i64().unwrap_or(-1), slot);
         // On its monitor (where the agent's hands can take it), in its place.

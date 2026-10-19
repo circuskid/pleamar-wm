@@ -2702,9 +2702,10 @@ impl State {
         // X11 says whose it is before it is shown (Wayland, later: `parent_changed`).
         self.beside_parent(slot);
         // Not one the agent opened, nor one of the program it is working with
-        // while your keyboard is in another (a dialog its click opened).
+        // while your keyboard is in another (a dialog its click opened), nor
+        // a terminal opened for an agent beside its own (`link spawn`).
         let parent_pid = self.parent_slot(slot).map_or(0, |p| self.pid_of(p));
-        if opened.is_none() && !self.agent_keeps_your_keyboard(pid) && !self.agent_keeps_your_keyboard(parent_pid) {
+        if opened.is_none() && !self.agent_keeps_your_keyboard(pid) && !self.agent_keeps_your_keyboard(parent_pid) && !crate::term::started_quiet(pid) {
             let before = self.focus;
             self.set_focus(Some(slot));
             self.focus_given = Some((slot, before, Instant::now()));
