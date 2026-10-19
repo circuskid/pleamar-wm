@@ -223,9 +223,36 @@ fn since(id: i32, before: usize) -> String {
         Some(k) => k + 1,
         None => before.saturating_sub(3).min(lines.len()),
     };
-    let new = &lines[from..];
-    let keep = new.len().saturating_sub(80);
-    new[keep..].join("\n")
+    answer(&lines[from..])
+}
+
+/// Of what came out after the task, the answer: from the agent's first
+/// message (Claude Code's `●`/`⏺`, Codex's `•`) if it marks them, and
+/// without what an agent draws under it —its input box between two rules,
+/// the prompt in it, the line under it, «done in 7s»—. At most 80 lines.
+fn answer(lines: &[&str]) -> String {
+    let rule = |l: &str| {
+        let t = l.trim();
+        t.chars().count() >= 20 && t.chars().all(|c| matches!(c, '─' | '━' | '-' | '═' | '╌'))
+    };
+    // Its input box: the first rule after which, before another rule, its prompt is.
+    let prompt = |l: &str| matches!(l.trim_start().chars().next(), Some('❯' | '›' | '>'));
+    let mut end = lines.len();
+    for (k, l) in lines.iter().enumerate() {
+        if rule(l) && lines[k + 1..].iter().take_while(|n| !rule(n)).any(|n| prompt(n)) {
+            end = k;
+            break;
+        }
+    }
+    let body = &lines[..end];
+    let start = body.iter().position(|l| matches!(l.trim_start().chars().next(), Some('●' | '⏺' | '•'))).unwrap_or(0);
+    let mut kept: Vec<&str> = body[start..].iter().map(|l| l.trim_end()).collect();
+    // Below the answer: blank lines, and how long it thought (`✻ Cogitated for 7s · done 20:25`).
+    while kept.last().is_some_and(|l| l.is_empty() || matches!(l.trim_start().chars().next(), Some('✻' | '✳' | '✶' | '✽' | '✢' | '·'))) {
+        kept.pop();
+    }
+    let keep = kept.len().saturating_sub(80);
+    kept[keep..].join("\n")
 }
 
 fn flow(k: usize, v: i32) {
@@ -433,4 +460,40 @@ fn back(k: usize, mine_is_a: bool) {
     flow(k, if mine_is_a { -1 } else { 1 });
     std::thread::sleep(Duration::from_millis(1600));
     flow(k, 0);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_claude_code_answer_comes_without_its_input_box() {
+        let screen = "  (trabajando en ~/Proyectos/pleamar). Esto es una prueba de los cables de pleamar-wm:
+  respóndeme en una sola frase quién eres y en qué carpeta estás. No hagas nada más.
+
+● Soy Claude Code (Opus 5.5) y estoy trabajando en la carpeta /home/abel.
+
+✻ Cogitated for 7s · done 20:25
+
+
+
+───────────────────────────────────────────────────────────────────────────────────────────
+❯
+───────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← 1 agent";
+        let lines: Vec<&str> = screen.lines().collect();
+        assert_eq!(answer(&lines), "● Soy Claude Code (Opus 5.5) y estoy trabajando en la carpeta /home/abel.");
+    }
+
+    #[test]
+    fn an_answer_of_several_lines_keeps_them_all() {
+        let lines = ["task tail", "", "● First line.", "  second line", "", "● And a last word.", "", "────────────────────────", "❯ ", "────────────────────────"];
+        assert_eq!(answer(&lines), "● First line.\n  second line\n\n● And a last word.");
+    }
+
+    #[test]
+    fn an_agent_that_marks_nothing_gives_what_it_said() {
+        let lines = ["ANSWER: FIND THE LEAK", ">"];
+        assert_eq!(answer(&lines), "ANSWER: FIND THE LEAK\n>");
+    }
 }
