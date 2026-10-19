@@ -189,8 +189,11 @@ impl Config {
 /// Writes the `dock` line of session.conf: where the first one was (the
 /// others gone), or at the end. Nothing else of the file changes.
 /// The layouts a monitor can start in, by their number in the scene
-/// (`lay.N`); `free` is no layout: windows where they are left.
-pub const LAYOUTS: [&str; 9] = ["leader", "columns", "rows", "grid", "leader-right", "scrolling", "marea", "fractal", "free"];
+/// (`lay.N`); `free` is no layout: windows where they are left; `canvas`
+/// is free on a plane with no edges, seen through a camera (`cv.N`).
+pub const LAYOUTS: [&str; 10] = ["leader", "columns", "rows", "grid", "leader-right", "scrolling", "marea", "fractal", "free", "canvas"];
+/// Where `free` is in `LAYOUTS`: it and what comes after it are free.
+pub const FREE: usize = 8;
 
 pub fn layout_index(name: &str) -> Option<usize> {
     LAYOUTS.iter().position(|l| *l == name).or((name == "leader-left").then_some(0))
@@ -685,11 +688,12 @@ mod tests {
     #[test]
     fn each_monitor_starts_in_the_layout_its_line_says() {
         let mut c = Config::default();
-        parse("layout * marea\nlayout HDMI-A-1 scrolling\nlayout DP-2 free\nlayout DP-9 sideways", &mut c);
+        parse("layout * marea\nlayout HDMI-A-1 scrolling\nlayout DP-2 free\nlayout DP-9 sideways\nlayout DP-1 canvas", &mut c);
         assert_eq!(c.layout_of("HDMI-A-1"), Some(5));
         assert_eq!(c.layout_of("DP-3"), Some(6), "`*` for the rest");
-        assert_eq!(c.layout_of("DP-2"), Some(LAYOUTS.len() - 1));
-        assert_eq!(c.layouts.len(), 3, "a layout it does not know is said, not kept");
+        assert_eq!(c.layout_of("DP-2"), Some(FREE));
+        assert_eq!(c.layout_of("DP-1"), Some(FREE + 1));
+        assert_eq!(c.layouts.len(), 4, "a layout it does not know is said, not kept");
         assert_eq!(layout_index("fractal"), Some(7));
         assert_eq!(Config::default().layout_of("DP-3"), None);
     }

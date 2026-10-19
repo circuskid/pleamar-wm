@@ -2,8 +2,8 @@
 -- itself (`pleamar-wm --say wm "get …"`), and what is picked, applied there
 -- at once and written in session.conf (`pleamar-wm config set layout …`).
 
-local NAMES = { "leader", "columns", "rows", "grid", "leader-right", "scrolling", "marea", "fractal", "free" }
-local SHOWN = { "Leader", "Columns", "Rows", "Grid", "Leader right", "Scrolling", "Marea", "Fractal", "Free" }
+local NAMES = { "leader", "columns", "rows", "grid", "leader-right", "scrolling", "marea", "fractal", "free", "canvas" }
+local SHOWN = { "Leader", "Columns", "Rows", "Grid", "Leader right", "Scrolling", "Marea", "Fractal", "Free", "Canvas" }
 
 local function wm(args, done)
     run("pleamar-wm", args, function(out, code)
@@ -16,7 +16,7 @@ local function shown(k, l)
     text["now." .. k] = l >= 0 and ("now " .. SHOWN[l + 1]) or ""
 end
 
--- Each monitor's name, and its layout now (free counts first).
+-- Each monitor's name, and its layout now (a canvas counts first, then free).
 local function look()
     for k = 0, 3 do
         wm({ "--say", "wm", "get monname." .. k }, function(name, code)
@@ -24,10 +24,13 @@ local function look()
             fact["has." .. k] = code == 0 and name ~= ""
             text["mon." .. k] = name
             if code ~= 0 or name == "" then return end
-            wm({ "--say", "wm", "get free." .. k }, function(free)
-                if (tonumber(free) or 0) > 0.5 then return shown(k, 8) end
-                wm({ "--say", "wm", "get lay." .. k }, function(lay)
-                    shown(k, math.floor(tonumber(lay) or 0))
+            wm({ "--say", "wm", "get cv." .. k }, function(cv)
+                if (tonumber(cv) or 0) > 0.5 then return shown(k, 9) end
+                wm({ "--say", "wm", "get free." .. k }, function(free)
+                    if (tonumber(free) or 0) > 0.5 then return shown(k, 8) end
+                    wm({ "--say", "wm", "get lay." .. k }, function(lay)
+                        shown(k, math.floor(tonumber(lay) or 0))
+                    end)
                 end)
             end)
         end)
@@ -46,8 +49,10 @@ on("pick", function(v)
     if name == "" then return end
     shown(k, l)
     -- At once, there…
-    if l == 8 then
-        wm({ "--say", "wm", "fact free." .. k .. " 1" })
+    if l == 9 then
+        wm({ "--say", "wm", "fact free." .. k .. " 1", "fact cv." .. k .. " 1" })
+    elseif l == 8 then
+        wm({ "--say", "wm", "fact free." .. k .. " 1", "fact cv." .. k .. " 0" })
     else
         wm({ "--say", "wm", "fact lay." .. k .. " " .. l, "fact free." .. k .. " 0" })
     end

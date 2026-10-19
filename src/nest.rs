@@ -885,16 +885,20 @@ fn run(max: usize, to_render: Sender<ToRender>, rx: Channel<ToNest>, ready: std:
     // What the dock has pinned (`dock …` in session.conf).
     let pins = crate::config::get().dock.iter().map(|w| crate::desktop::pin(w)).collect();
     let _ = state.to_render.send(ToRender::Nest(NestEvent::Dock(pins)));
-    // How each monitor starts (`layout …` in session.conf): its layout, or free.
-    // And its name, for whoever sets that from outside (the control centre).
+    // How each monitor starts (`layout …` in session.conf): its layout, or
+    // free, or a canvas (free, and `cv`). And its name, for whoever sets that
+    // from outside (the control centre).
     for (k, m) in monitors.iter().enumerate().take(4) {
         let _ = state.to_render.send(ToRender::Text(pleamar::scene::intern(&format!("monname.{k}")), m.name.clone()));
         let Some(l) = crate::config::get().layout_of(&m.name) else { continue };
-        let free = l == crate::config::LAYOUTS.len() - 1;
+        let free = l >= crate::config::FREE;
         if !free {
             let _ = state.to_render.send(ToRender::ExternalFact(pleamar::scene::intern(&format!("lay.{k}")), l.to_string()));
         }
         let _ = state.to_render.send(ToRender::ExternalFact(pleamar::scene::intern(&format!("free.{k}")), if free { "1" } else { "0" }.into()));
+        if l > crate::config::FREE {
+            let _ = state.to_render.send(ToRender::ExternalFact(pleamar::scene::intern(&format!("cv.{k}")), "1".into()));
+        }
         println!("windows · {} starts {}", m.name, crate::config::LAYOUTS[l]);
     }
     // The control centre among the user's applications (Marea's finder, any

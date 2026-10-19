@@ -38,6 +38,14 @@ the open windows without closing anything.
 
 # What's new
 
+- **A canvas** (0.4.6): a monitor whose windows live on a plane with no edges,
+  seen through a camera, as an infinite whiteboard of windows. Drag the empty
+  plane to move about, the wheel (or Super and the wheel, over a window) to
+  come closer or go further right where the pointer is, `Super+0` to see them
+  all. Each program keeps its own size and is shown smaller when the camera is
+  further away; let a window go near another one's edge and it takes its side.
+  `Super+Shift+W` turns a monitor into one and back; also the last tile of the
+  layouts strip, the control centre, or `layout DP-3 canvas` in session.conf.
 - **Eight layouts, and one control centre to pick them** (0.4): to the leader,
   columns, rows and grid come **scrolling** (as niri: columns on a strip that
   glides to the one with the keyboard), **marea** (the one with the keyboard
@@ -260,7 +268,7 @@ never writes over what is there:
 ```
 
 `keys.conf` binds keys to the window manager's actions —the events its scene
-declares: `close`, `minimize`, `toggle_free`, `toggle_float` (Super+V: only the
+declares: `close`, `minimize`, `toggle_free`, `toggle_canvas`, `canvas_fit`, `toggle_float` (Super+V: only the
 window with the keyboard floats over the tiles), `maximize` (tiled, it takes all
 of its monitor —bars and gaps kept— over the others, and goes back to its tile;
 no key of its own: `bind Super+m maximize` as Hyprland's `fullscreen 1`),
@@ -289,7 +297,7 @@ out the same. `pleamar-wm config` shows what it understood.
 ```text
 monitor DP-3 1920x1080@165 at 0,0          # mode, refresh, where
 layout * leader                             # how monitors start: leader, columns, rows, grid,
-layout HDMI-A-1 scrolling                   #   leader-right, scrolling, marea, fractal, free
+layout HDMI-A-1 scrolling                   #   leader-right, scrolling, marea, fractal, free, canvas
 monitor HDMI-A-1 preferred at 1920,0 scale 1.5
 keyboard layout es repeat 25 delay 400
 pointer accel flat
@@ -331,14 +339,15 @@ The ones that come with it (`pleamar-wm keys` prints them all), as on Hyprland:
 | `Super+Q` | close the one with the keyboard (it goes at once) |
 | `Super+M` · `Super+Shift+M` | put it away into Marea · bring the last one back |
 | `Super+W` | tiled or free windows on this monitor |
+| `Super+Shift+W` · `Super+0` | this monitor a canvas, and back · all of its windows in sight |
 | `Super+F` | fullscreen |
 | `Super+Tab` | everything at a glance |
 | `Super+1…9` · `Super+Shift+1…9` | show that workspace · send the window there |
 | `Super+Ctrl+Left/Right` | the workspace beside |
 | `Super+arrows` | the keyboard to the window that way (any layout, any monitor) |
 | `Super+Shift+arrows` | lead, move to the other monitor, change places |
-| `Super+-` · `Super++` | the leader (scrolling: the columns) narrower / wider; fractal: zoom out / in |
-| `Super+wheel` | fractal: zoom in and out where the pointer is; scrolling: along the columns |
+| `Super+-` · `Super++` | the leader (scrolling: the columns) narrower / wider; fractal and canvas: zoom out / in |
+| `Super+wheel` | fractal and canvas: zoom in and out where the pointer is; scrolling: along the columns |
 | `Super+I` | the control centre: each monitor's layout, what each key does |
 | `Super+Space` · `Super+L` | Marea's search · lock |
 | `Super+Shift+A` | talk with Marea (her chat, which can use the desktop for you) |
