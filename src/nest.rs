@@ -881,6 +881,12 @@ fn run(max: usize, to_render: Sender<ToRender>, rx: Channel<ToNest>, ready: std:
     // its launcher): this process may not have it in its own environment.
     pleamar::set_child_env("WAYLAND_DISPLAY", Some(&socket));
     pleamar::set_child_env("DISPLAY", None);
+    // A terminal it starts runs the user's shell through a layer of this
+    // program (term.rs), which lets windows wired to it read and type in it.
+    if let Some((link, real)) = crate::term::session_shell() {
+        pleamar::set_child_env("SHELL", Some(link));
+        pleamar::set_child_env("PLEAMAR_REAL_SHELL", Some(real));
+    }
     let _ = state.to_render.send(ToRender::Nest(NestEvent::Socket(socket)));
     // What the dock has pinned (`dock …` in session.conf).
     let pins = crate::config::get().dock.iter().map(|w| crate::desktop::pin(w)).collect();
@@ -1635,6 +1641,10 @@ impl State {
         }
         // Nor Hyprland's: a program that asks it things would get another desktop's answers.
         c.env_remove("HYPRLAND_INSTANCE_SIGNATURE");
+        // Its terminals, through the layer (term.rs).
+        if let Some((link, real)) = crate::term::session_shell() {
+            c.env("SHELL", link).env("PLEAMAR_REAL_SHELL", real);
+        }
         // In a session of its own, the scenes it starts (Marea) listen apart
         // from the ones of another desktop of the same user that may be open.
         // And the window manager's scene is there as `wm`: Marea switches it

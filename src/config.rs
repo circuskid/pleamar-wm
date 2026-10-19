@@ -101,6 +101,10 @@ pub struct Config {
     /// `agent on`: a computer-use agent (Cua Driver) may use the desktop
     /// with a pointer and a keyboard of its own (see `agent.rs`).
     pub agent: bool,
+    /// `terminals off`: the terminals the session starts get the user's
+    /// shell as it is, without the layer that lets wired windows read and
+    /// type in them (see `term.rs`). On unless said.
+    pub terminals_off: bool,
 }
 
 /// A rule for the windows that match it: by their program (`app=`, the
@@ -453,6 +457,10 @@ pub fn parse(text: &str, c: &mut Config) {
                 eprintln!("config · line {}: `agent on` or `agent off`", n + 1);
                 false
             }),
+            "terminals" => c.terminals_off = !on(rest.first()).unwrap_or_else(|| {
+                eprintln!("config · line {}: `terminals on` or `terminals off`", n + 1);
+                true
+            }),
             "idle" => pairs(&mut |k, v| match k {
                 "off-after" => c.off_after = v.and_then(|v| v.parse().ok()).filter(|s| *s > 0),
                 _ => eprintln!("config · line {}: idle has no '{k}'", n + 1),
@@ -461,7 +469,7 @@ pub fn parse(text: &str, c: &mut Config) {
                 Some((w, cmd)) if w == "lock" && !cmd.is_empty() => c.phone_lock = Some(cmd.join(" ")),
                 _ => eprintln!("config · line {}: `phone lock COMMAND` (or `phone lock none`)", n + 1),
             },
-            other => eprintln!("config · line {}: '{other}' is not something it knows (monitor, layout, keyboard, pointer, touchpad, idle, agent, phone)", n + 1),
+            other => eprintln!("config · line {}: '{other}' is not something it knows (monitor, layout, keyboard, pointer, touchpad, idle, agent, terminals, phone)", n + 1),
         }
     }
 }

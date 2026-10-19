@@ -38,6 +38,17 @@ the open windows without closing anything.
 
 # What's new
 
+- **Every terminal readable and writable from outside** (0.4.6): in a session,
+  the terminals it starts —kitty, Alacritty, foot, Konsole, any that runs
+  `$SHELL`— run the user's shell through a thin layer of pleamar-wm's own,
+  which passes everything through untouched and keeps what is on the screen.
+  `pleamar-wm term list` shows them (which window, what runs in each: an
+  agent such as Claude Code, and whether it works or waits for you, its
+  folder); `term read ID`, `term paste ID TEXT`, `term keys ID enter` read
+  and type in one, wherever it is and whether it has the keyboard or not.
+  What runs inside knows its terminal by `PLEAMAR_TERMINAL`. A command run
+  with `$SHELL -c`, or anything not on a terminal, gets the shell as it is;
+  `terminals off` in session.conf leaves them all as they are.
 - **A canvas** (0.4.6): a monitor whose windows live on a plane with no edges,
   seen through a camera, as an infinite whiteboard of windows. Drag the empty
   plane to move about, the wheel (or Super and the wheel, over a window) to
@@ -309,6 +320,7 @@ window app=discord workspace 3 monitor 1
 window title="Picture in Picture" float     # `*` for anything: app=org.gnome.*
 window app=org.keepassxc.KeePassXC private  # pixelated when a whole screen is shared
 window app=zen frame=own                    # it draws its own title bar (its tabs up there)
+terminals off                               # the terminals' shells as they are (see below)
 ```
 
 In the login screen (SDDM, GDM): `pleamar-update --session` puts «pleamar-wm»

@@ -21,8 +21,12 @@ mod probe;
 mod route;
 mod screen;
 mod session;
+mod term;
 
 fn main() {
+    // Called as the user's shell (the session's `SHELL`): the layer between
+    // a terminal and the real shell, or that shell at once (see term.rs).
+    term::as_shell();
     // Called `pleamar` (Build's link to it): pleamar itself, the one inside,
     // for what Build starts and checks where no pleamar is installed.
     if std::env::args_os().next().is_some_and(|a| std::path::Path::new(&a).file_name().is_some_and(|n| n == "pleamar")) {
@@ -47,6 +51,10 @@ fn main() {
     // `pleamar-wm agent …`: the agent's hands from a shell (see agent_cli.rs).
     if args.first().map(String::as_str) == Some("agent") {
         std::process::exit(agent_cli::run(&args[1..]));
+    }
+    // `pleamar-wm term …`: the terminals' layers, by hand (see term.rs).
+    if args.first().map(String::as_str) == Some("term") {
+        std::process::exit(term::cli(&args[1..]));
     }
     // `pleamar-wm remote …`: this desktop from a browser elsewhere (see remote.rs).
     if args.first().map(String::as_str) == Some("remote") {
