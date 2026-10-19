@@ -87,6 +87,9 @@ pub struct Config {
     /// The programs pinned to the dock of free monitors, in order: `dock
     /// kitty zen-browser org.telegram.desktop`.
     pub dock: Vec<String>,
+    /// How that dock behaves: `dock-style hide on magnify off dots on into
+    /// off size 44 side bottom` (the control centre writes it).
+    pub dock_style: DockStyle,
     pub keyboard: Keyboard,
     pub pointer: Pointing,
     pub touchpad: Pointing,
@@ -105,6 +108,88 @@ pub struct Config {
     /// shell as it is, without the layer that lets wired windows read and
     /// type in them (see `term.rs`). On unless said.
     pub terminals_off: bool,
+}
+
+/// How the dock of free monitors behaves (`dock-style …`).
+#[derive(Clone, Debug)]
+pub struct DockStyle {
+    /// Out of sight until the mouse is pushed against its edge; the windows
+    /// then have that room too.
+    pub hide: bool,
+    /// The icons under the mouse swell, the nearest most, instead of rising as buoys.
+    pub magnify: bool,
+    /// A drop under each program per window it has.
+    pub dots: bool,
+    /// Put away, a window goes into its program's icon, not onto the dock beside it.
+    pub into: bool,
+    /// The icons' size, 32 to 72.
+    pub size: u32,
+    /// Which edge: `bottom`, `left` or `right`.
+    pub side: DockSide,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DockSide {
+    Bottom,
+    Left,
+    Right,
+}
+
+impl DockSide {
+    pub fn name(self) -> &'static str {
+        match self {
+            DockSide::Bottom => "bottom",
+            DockSide::Left => "left",
+            DockSide::Right => "right",
+        }
+    }
+    fn of(w: &str) -> Option<DockSide> {
+        match w {
+            "bottom" => Some(DockSide::Bottom),
+            "left" => Some(DockSide::Left),
+            "right" => Some(DockSide::Right),
+            _ => None,
+        }
+    }
+}
+
+impl Default for DockStyle {
+    fn default() -> Self {
+        DockStyle { hide: false, magnify: false, dots: true, into: false, size: 44, side: DockSide::Bottom }
+    }
+}
+
+impl DockStyle {
+    /// One of its settings, from words (`hide on`, `size 52`, `side left`).
+    pub fn set(&mut self, k: &str, v: Option<&String>) -> Result<(), String> {
+        let flag = |v: Option<&String>| on(v).ok_or(format!("`{k} on` or `{k} off`"));
+        match k {
+            "hide" => self.hide = flag(v)?,
+            "magnify" => self.magnify = flag(v)?,
+            "dots" => self.dots = flag(v)?,
+            "into" => self.into = flag(v)?,
+            "size" => self.size = v.and_then(|v| v.parse().ok()).filter(|n| (32..=72).contains(n)).ok_or("`size N`, 32 to 72")?,
+            "side" => self.side = v.and_then(|v| DockSide::of(v)).ok_or("`side bottom`, `left` or `right`")?,
+            _ => return Err(format!("the dock has no '{k}': hide, magnify, dots, into, size, side")),
+        }
+        Ok(())
+    }
+
+    fn line(&self) -> String {
+        let f = |b: bool| if b { "on" } else { "off" };
+        format!("dock-style hide {} magnify {} dots {} into {} size {} side {}", f(self.hide), f(self.magnify), f(self.dots), f(self.into), self.size, self.side.name())
+    }
+
+    /// The facts the scene reads (`dock.hide`, `dock.side`: 0 bottom, 1 left, 2 right…).
+    pub fn facts(&self) -> [(&'static str, String); 6] {
+        let b = |b: bool| if b { "1" } else { "0" }.to_owned();
+        let side = match self.side {
+            DockSide::Bottom => 0,
+            DockSide::Left => 1,
+            DockSide::Right => 2,
+        };
+        [("dock.hide", b(self.hide)), ("dock.mag", b(self.magnify)), ("dock.dots", b(self.dots)), ("dock.into", b(self.into)), ("dock.size", self.size.to_string()), ("dock.side", side.to_string())]
+    }
 }
 
 /// A rule for the windows that match it: by their program (`app=`, the
@@ -236,6 +321,44 @@ pub fn write_dock(pins: &[String]) {
     if let Err(e) = std::fs::write(&path, out.join("\n") + "\n") {
         eprintln!("config · could not write {path}: {e}");
     }
+}
+
+/// Writes one of the dock's settings (`dock-style …` in session.conf): the
+/// line as it is with that one changed, where it was, or at the end.
+pub fn write_dock_style(k: &str, v: &str) -> Result<(), String> {
+    let path = std::env::var("PLEAMAR_WM_CONFIG").ok().or_else(|| user_dir().map(|d| format!("{d}/session.conf"))).ok_or("there is no configuration folder")?;
+    let text = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut style = DockStyle::default();
+    for l in text.lines() {
+        let w = words(l.split('#').next().unwrap_or(""));
+        if w.first().map(String::as_str) == Some("dock-style") {
+            for p in w[1..].chunks(2) {
+                let _ = style.set(&p[0], p.get(1));
+            }
+        }
+    }
+    style.set(k, Some(&v.to_owned()))?;
+    let line = style.line();
+    let mut out: Vec<String> = Vec::new();
+    let mut put = false;
+    for l in text.lines() {
+        let w = words(l.split('#').next().unwrap_or(""));
+        if w.first().map(String::as_str) == Some("dock-style") {
+            if !put {
+                out.push(line.clone());
+                put = true;
+            }
+            continue;
+        }
+        out.push(l.to_owned());
+    }
+    if !put {
+        out.push(line);
+    }
+    if let Some(dir) = std::path::Path::new(&path).parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    std::fs::write(&path, out.join("\n") + "\n").map_err(|e| format!("could not write {path}: {e}"))
 }
 
 /// Writes how a monitor starts (`layout MONITOR NAME` in session.conf; `*`
@@ -405,6 +528,11 @@ pub fn parse(text: &str, c: &mut Config) {
                 }
             }
             "dock" => c.dock.extend(rest.iter().cloned()),
+            "dock-style" => pairs(&mut |k, v| {
+                if let Err(e) = c.dock_style.set(k, v) {
+                    eprintln!("config · line {}: {e}", n + 1);
+                }
+            }),
             "window" => {
                 let mut r = WindowRule::default();
                 let mut k = 0;

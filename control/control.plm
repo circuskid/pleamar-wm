@@ -1,5 +1,6 @@
-// pleamar-wm's control centre: how each monitor lays its windows out, and
-// what each key does in each layout. `pleamar-wm control` opens it.
+// pleamar-wm's control centre: how each monitor lays its windows out, what
+// each key does in each layout, and how the dock of free monitors behaves.
+// `pleamar-wm control` opens it.
 //
 // A layout picked here applies at once to that monitor and is written in
 // session.conf (`layout MONITOR NAME`), so the next session starts with it.
@@ -27,7 +28,7 @@ scene Control {
     // The models, three to a row on a wide window, fewer on a narrow one.
     let bcols = clamp(floor((aw + 10) / 240), 1, 3)
 
-    fact page = 0                  // 0 layouts · 1 keys · 2 about · 3 build
+    fact page = 0                  // 0 layouts · 1 keys · 2 about · 3 build · 4 dock
     fact has.0 = false             // a monitor there (by the session's order)
     fact has.1 = false
     fact has.2 = false
@@ -51,6 +52,14 @@ scene Control {
     fact peek = -1                 // the layout the preview shows: the one under the mouse
     event pick ->                  // monitor × 10 + layout
     event go ->                    // a page
+    // The dock (`dock-style …` in session.conf), as the session has it now.
+    fact d.hide = 0
+    fact d.mag = 0
+    fact d.dots = 1
+    fact d.into = 0
+    fact d.size = 44
+    fact d.side = 0                // 0 bottom · 1 left · 2 right
+    event dk ->                    // setting × 100 + value: 0 hide, 1 magnify, 2 drops, 3 into, 4 size, 5 side
     // Build (pleamar-wm build): who the AI is, and which model builds.
     fact b.signed.0 = false        // ChatGPT (openai-codex)
     fact b.signed.1 = false        // Claude (anthropic)
@@ -92,7 +101,7 @@ scene Control {
     text "Control centre" { at: 64, 44; size: 17; weight: 700; color: ink }
     text "pleamar-wm" { at: 64, 64; size: 11.5; color: mint; opacity: 85% }
 
-    repeat k in 0..4 {
+    repeat k in 0..5 {
         group {
             prop on = 0 ~calm
             follow on = if(page == k, 1, 0)
@@ -122,6 +131,12 @@ scene Control {
         path { at: 31, 249; color: mix(dim, mint, page == 3); stroke: 1.6
                move 2, 16; line 12, 4; line 15, 7; line 5, 18; line 1, 19; close }
         text "Build" { at: 60, 258; anchor: left center; size: 13.5; weight: 600; color: mix(dim, ink, page == 3) }
+        // Dock: a shore with three drops on it.
+        box { from: 29, 303; size: 22, 9; corner: 4.5; stroke: 1.5; color: mix(dim, mint, page == 4) }
+        ellipse { at: 34.5, 307.5; radius: 1.6; color: mix(dim, mint, page == 4) }
+        ellipse { at: 40, 307.5; radius: 1.6; color: mix(dim, mint, page == 4) }
+        ellipse { at: 45.5, 307.5; radius: 1.6; color: mix(dim, mint, page == 4) }
+        text "Dock" { at: 60, 302; anchor: left center; size: 13.5; weight: 600; color: mix(dim, ink, page == 4) }
     }
     text "Changes apply at once and are kept for the next session." { at: 28, H - 70; size: 11; color: dim; opacity: 70%; width: 180; line_height: 1.35 }
 
@@ -431,6 +446,70 @@ scene Control {
         text "Sign in with an account above and its models appear here." { at: px + 18, 410; size: 12; color: dim; show: b.asked and b.models.count < 1 }
         text "Asking the accounts…" { at: px + 18, 410; size: 12; color: dim; show: not b.asked }
         text "{b.status}" { at: px, 368 + max(276, 58 + ceil(max(b.models.count, 1) / bcols) * 48); size: 11.5; color: mint; width: W - px - 40; lines: 2 }
+    }
+
+    // ── Dock: how the shore of free monitors behaves. Each one applies at
+    // once to every monitor's shore and is kept for the next session
+    // (`pleamar-wm config set dock …`). ──
+    component Toggle(k: number, name: text, about: text, on: number, w: number) {
+        size: w, 62
+        prop kk = 0 ~calm
+        follow kk = if(on > 0.5, 1, 0)
+        box { from: 0, 61; size: w, 1; color: ink; opacity: if(k < 3, 6%, 0) }
+        text name { at: 0, 22; anchor: left center; size: 14; weight: 700; color: ink }
+        text about { at: 0, 42; anchor: left center; size: 11.5; color: dim; width: max(w - 90, 80); lines: 1 }
+        box { from: w - 52, 20; size: 44, 24; corner: 12; color: mix(#2a302e, mint, kk) }
+        body {
+            color: ink
+            shadow: 0, 1, 3, 30%
+            box { from: w - 50 + 20 * kk, 22; size: 20, 20; corner: 10 }
+        }
+        zone box flip { from: w - 58, 14; size: 56, 36; corner: 12; cursor: pointer; label: name; role: toggle; checked: on > 0.5 }
+        on press flip { emit dk(k * 100 + if(on > 0.5, 0, 1)) }
+    }
+    component Choice(word: text, chosen: number, code: number) {
+        size: 86, 30
+        prop glow = 0 ~140ms
+        box { from: 0, 0; size: 82, 30; corner: 10; color: if(chosen > 0.5, mint, #24302d); opacity: if(chosen > 0.5, 90%, 70% + 30% * glow) }
+        text word { at: 41, 15; anchor: center; size: 12; weight: 700; color: if(chosen > 0.5, coal, ink) }
+        zone box pick { from: 0, 0; size: 82, 30; corner: 10; cursor: pointer; label: word; role: tab; selected: chosen > 0.5 }
+        on enter pick { glow: 1 }
+        on leave pick { glow: 0 }
+        on press pick { emit dk(code) }
+    }
+    group {
+        show: page == 4
+        text "Dock" { at: px, 44; size: 24; weight: 700; color: ink }
+        text "The shore of a free monitor: how it shows, how it moves, and where it is." { at: px, 74; size: 12.5; color: dim; width: W - px - 40; lines: 2 }
+        body {
+            color: card
+            rim: 12%
+            shadow: 0, 10, 26, 35%
+            box { from: px - 4, 104; size: W - px - 24, 4 * 62 + 24; corner: 16 }
+            box { from: px - 4, 104 + 4 * 62 + 40; size: W - px - 24, 132; corner: 16 }
+        }
+        column { at: px + 18, 116; gap: 0
+            Toggle(0, "Hide it", "Out of sight until the mouse touches its edge; the windows have its room", d.hide, min(aw - 4, 760))
+            Toggle(1, "Magnification", "The icons under the mouse swell, the nearest most, instead of rising like buoys", d.mag, min(aw - 4, 760))
+            Toggle(2, "Drops under open programs", "One per window it has; mint, the one with the keyboard", d.dots, min(aw - 4, 760))
+            Toggle(3, "Put windows away into their icon", "Minimized, a window goes into its program's icon instead of floating beside it", d.into, min(aw - 4, 760))
+        }
+        let dy = 104 + 4 * 62 + 40
+        text "Size" { at: px + 18, dy + 34; anchor: left center; size: 14; weight: 700; color: ink }
+        row { at: px + 140, dy + 19; gap: 0
+            Choice("Small", d.size == 36, 436)
+            Choice("Medium", d.size == 44, 444)
+            Choice("Large", d.size == 56, 456)
+            Choice("Huge", d.size == 68, 468)
+        }
+        box { from: px + 18, dy + 66; size: min(aw - 40, 740), 1; color: ink; opacity: 6% }
+        text "Position" { at: px + 18, dy + 98; anchor: left center; size: 14; weight: 700; color: ink }
+        row { at: px + 140, dy + 83; gap: 0
+            Choice("Left", d.side == 1, 501)
+            Choice("Bottom", d.side == 0, 500)
+            Choice("Right", d.side == 2, 502)
+        }
+        text "On a tiled monitor there is no dock: Super+W makes it free." { at: px, dy + 152; size: 11.5; color: dim; opacity: 80%; width: W - px - 40 }
     }
 
     // ── what was saved, for a moment at the bottom ──

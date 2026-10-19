@@ -897,6 +897,10 @@ fn run(max: usize, to_render: Sender<ToRender>, rx: Channel<ToNest>, ready: std:
     // What the dock has pinned (`dock …` in session.conf).
     let pins = crate::config::get().dock.iter().map(|w| crate::desktop::pin(w)).collect();
     let _ = state.to_render.send(ToRender::Nest(NestEvent::Dock(pins)));
+    // And how it behaves (`dock-style …`).
+    for (name, v) in crate::config::get().dock_style.facts() {
+        let _ = state.to_render.send(ToRender::ExternalFact(pleamar::scene::intern(name), v));
+    }
     // How each monitor starts (`layout …` in session.conf): its layout, or
     // free (a canvas; `canvas` says the same). And its name, for whoever sets
     // that from outside (the control centre).

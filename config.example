@@ -16,6 +16,12 @@
 # the class their windows say, or their name.
 #dock kitty zen-browser org.telegram.desktop
 
+# How the shore behaves (the control centre's Dock page writes it): hidden
+# until the mouse touches its edge, the icons swelling under the mouse, a drop
+# under each program per window, windows put away into their program's icon,
+# the icons' size (32 to 72), and its edge: bottom, left or right.
+#dock-style hide off magnify off dots on into off size 44 side bottom
+
 # How a monitor starts: one of leader, columns, rows, grid, leader-right,
 # scrolling (as niri), marea (the one used most is widest), fractal (split and
 # split again, and zoom), or free (each window where it is left). `*` for every

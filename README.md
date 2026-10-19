@@ -152,9 +152,13 @@ Every release, with what changed: [Releases].
   and rings the water, and goes to its window (the next one, pressed again) or
   starts the program. Its name shows over it; held a moment, its windows rise
   from the water as live previews; a coral drop says what is unread (Marea tells
-  it); a file dropped on it opens with it. Right click: keep it on the shore or
-  let it go, and close its windows; drag it out of the shore and it bursts into
-  drops, unpinned (`session.conf` keeps what you pin).
+  it); a file dropped on it opens with it; while a program starts, its icon
+  hops. Right click: its windows to pick, a new window, hide them, keep it on
+  the shore or let it go, and close its windows; drag it out of the shore and it
+  bursts into drops, unpinned (`session.conf` keeps what you pin). The control
+  centre's Dock page says how it behaves —hidden until the mouse touches its
+  edge, magnified, without the drops, windows put away into their icon, its
+  size, and its edge: bottom, left or right— (`dock-style …` in session.conf).
 - **Windows fill like a tank**: a window that opens appears where it goes and
   the water comes up inside it, a wavy line with a bright edge, until in a
   quarter of a second it is the window. One that closes drains the same way.
@@ -346,6 +350,7 @@ pointer accel flat
 touchpad tap on natural on
 idle off-after 600                          # the monitors go dark
 dock kitty zen-browser org.telegram.desktop   # pinned to the shore of free monitors
+dock-style hide off magnify on side bottom  # how it behaves (the control centre's Dock page)
 window app=pavucontrol float size 820x560   # what some windows do when they open
 window app=discord workspace 3 monitor 1
 window title="Picture in Picture" float     # `*` for anything: app=org.gnome.*

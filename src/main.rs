@@ -129,8 +129,15 @@ fn main() {
                     std::process::exit(1);
                 }
             }
+            // `config set dock hide on`: one of the dock's settings (`dock-style` in session.conf).
+            Some("set") if args.get(2).map(String::as_str) == Some("dock") && args.len() == 5 => {
+                if let Err(e) = config::write_dock_style(&args[3], &args[4]) {
+                    eprintln!("config · {e}");
+                    std::process::exit(1);
+                }
+            }
             Some(other) => {
-                eprintln!("config · '{other}': `pleamar-wm config`, `config layouts`, or `config set layout MONITOR|* NAME` ({})", config::LAYOUTS.join(", "));
+                eprintln!("config · '{other}': `pleamar-wm config`, `config layouts`, `config set layout MONITOR|* NAME` ({}), or `config set dock hide|magnify|dots|into|size|side VALUE`", config::LAYOUTS.join(", "));
                 std::process::exit(1);
             }
             None => println!("{:#?}", config::get()),
