@@ -1469,6 +1469,14 @@ impl State {
     /// A window asks to be carried (1) or stretched (2) by its edges, from
     /// its own frame: the scene does it while the button is down.
     pub(crate) fn hold(&mut self, slot: usize, how: u32, edges: u32) {
+        // Only while it is: a quick click on its title bar is let go before
+        // the program's ask comes, and the window then went with the mouse,
+        // no button down, until the next click (carried somewhere, or
+        // stretched to wherever the desktop was clicked).
+        if !self.pointer.is_grabbed() {
+            println!("windows · window {slot} asked to be {} with the button already let go: not", if how == 1 { "carried" } else { "stretched" });
+            return;
+        }
         if let Some(before) = self.held.replace(slot).filter(|s| *s != slot) {
             self.tell(NestEvent::Held { slot: before, how: 0, edges: 0 });
         }
