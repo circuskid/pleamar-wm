@@ -1763,8 +1763,8 @@ impl State {
 
     /// The desktop as it is, for whoever asks without a compositor's own
     /// socket to ask (`pleamar-wm hyprctl`, what Marea's screenshots use):
-    /// the monitors, which has the focus, and where the window with the
-    /// keyboard is. Only in a session of its own.
+    /// the monitors, which has the focus, where the window with the
+    /// keyboard is, and whether it is locked. Only in a session of its own.
     fn write_desktop(&self) {
         let monitors = layers::monitors();
         if monitors.is_empty() {
@@ -1774,6 +1774,7 @@ impl State {
         for (k, m) in monitors.iter().enumerate() {
             text.push_str(&format!("monitor {} {} {} {} {} {} {} {}\n", m.name, m.size.0, m.size.1, m.x, m.y, m.mhz, (k == self.on_screen) as u8, m.scale));
         }
+        text.push_str(&format!("locked {}\n", layers::locked() as u8));
         if let Some(w) = self.focus.and_then(|s| self.slots.get(s)).and_then(Option::as_ref) {
             if let Some((name, r)) = &w.shown {
                 let (x, y) = monitors.iter().find(|m| &m.name == name).map_or((0, 0), |m| (m.x, m.y));
@@ -4021,11 +4022,13 @@ impl SessionLockHandler for State {
             layers::request_phone(None);
         }
         confirmation.lock();
+        self.write_desktop();
     }
 
     fn unlock(&mut self) {
         println!("windows · the session is unlocked");
         layers::set_locked(false);
+        self.write_desktop();
         let (locks, rest): (Vec<Panel>, Vec<Panel>) = std::mem::take(&mut self.panels).into_iter().partition(|p| matches!(p.shell, Shell::Lock(_)));
         self.panels = rest;
         for p in locks {
