@@ -12104,12 +12104,15 @@ scene Session {
         let wv.a = max(wire.$k.a, 0)
         let wv.b = max(wire.$k.b, 0)
         let wv.on = wire.$k.a >= 0 and wire.$k.b >= 0 and pick(screen.index, free.0, free.1, free.2, free.3) > 0.5 and pick(wv.a, (win.0.open and not win.0.minimized and win.0.screen == screen.index and win.0.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.1.open and not win.1.minimized and win.1.screen == screen.index and win.1.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.2.open and not win.2.minimized and win.2.screen == screen.index and win.2.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.3.open and not win.3.minimized and win.3.screen == screen.index and win.3.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.4.open and not win.4.minimized and win.4.screen == screen.index and win.4.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.5.open and not win.5.minimized and win.5.screen == screen.index and win.5.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.6.open and not win.6.minimized and win.6.screen == screen.index and win.6.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.7.open and not win.7.minimized and win.7.screen == screen.index and win.7.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.8.open and not win.8.minimized and win.8.screen == screen.index and win.8.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.9.open and not win.9.minimized and win.9.screen == screen.index and win.9.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.10.open and not win.10.minimized and win.10.screen == screen.index and win.10.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.11.open and not win.11.minimized and win.11.screen == screen.index and win.11.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.12.open and not win.12.minimized and win.12.screen == screen.index and win.12.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.13.open and not win.13.minimized and win.13.screen == screen.index and win.13.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.14.open and not win.14.minimized and win.14.screen == screen.index and win.14.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.15.open and not win.15.minimized and win.15.screen == screen.index and win.15.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3))) and pick(wv.b, (win.0.open and not win.0.minimized and win.0.screen == screen.index and win.0.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.1.open and not win.1.minimized and win.1.screen == screen.index and win.1.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.2.open and not win.2.minimized and win.2.screen == screen.index and win.2.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.3.open and not win.3.minimized and win.3.screen == screen.index and win.3.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.4.open and not win.4.minimized and win.4.screen == screen.index and win.4.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.5.open and not win.5.minimized and win.5.screen == screen.index and win.5.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.6.open and not win.6.minimized and win.6.screen == screen.index and win.6.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.7.open and not win.7.minimized and win.7.screen == screen.index and win.7.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.8.open and not win.8.minimized and win.8.screen == screen.index and win.8.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.9.open and not win.9.minimized and win.9.screen == screen.index and win.9.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.10.open and not win.10.minimized and win.10.screen == screen.index and win.10.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.11.open and not win.11.minimized and win.11.screen == screen.index and win.11.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.12.open and not win.12.minimized and win.12.screen == screen.index and win.12.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.13.open and not win.13.minimized and win.13.screen == screen.index and win.13.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.14.open and not win.14.minimized and win.14.screen == screen.index and win.14.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)), (win.15.open and not win.15.minimized and win.15.screen == screen.index and win.15.pool == pick(screen.index, win.pool.0, win.pool.1, win.pool.2, win.pool.3)))
-        let wv.ax = pick(wv.a, x.0, x.1, x.2, x.3, x.4, x.5, x.6, x.7, x.8, x.9, x.10, x.11, x.12, x.13, x.14, x.15)
-        let wv.ay = pick(wv.a, y.0, y.1, y.2, y.3, y.4, y.5, y.6, y.7, y.8, y.9, y.10, y.11, y.12, y.13, y.14, y.15)
+        // (One being carried is where it is drawn, under the mouse.)
+        let wv.cx = mouse.x + pick(mon, mx.0, mx.1, mx.2, mx.3) - pick(screen.index, mx.0, mx.1, mx.2, mx.3) - grab.x
+        let wv.cy = mouse.y - grab.y
+        let wv.ax = if(dragging == wv.a and wire.$k.a >= 0, wv.cx, pick(wv.a, x.0, x.1, x.2, x.3, x.4, x.5, x.6, x.7, x.8, x.9, x.10, x.11, x.12, x.13, x.14, x.15))
+        let wv.ay = if(dragging == wv.a and wire.$k.a >= 0, wv.cy, pick(wv.a, y.0, y.1, y.2, y.3, y.4, y.5, y.6, y.7, y.8, y.9, y.10, y.11, y.12, y.13, y.14, y.15))
         let wv.aw = pick(wv.a, w.0, w.1, w.2, w.3, w.4, w.5, w.6, w.7, w.8, w.9, w.10, w.11, w.12, w.13, w.14, w.15)
         let wv.ah = pick(wv.a, h.0, h.1, h.2, h.3, h.4, h.5, h.6, h.7, h.8, h.9, h.10, h.11, h.12, h.13, h.14, h.15)
-        let wv.bx = pick(wv.b, x.0, x.1, x.2, x.3, x.4, x.5, x.6, x.7, x.8, x.9, x.10, x.11, x.12, x.13, x.14, x.15)
-        let wv.by = pick(wv.b, y.0, y.1, y.2, y.3, y.4, y.5, y.6, y.7, y.8, y.9, y.10, y.11, y.12, y.13, y.14, y.15)
+        let wv.bx = if(dragging == wv.b and wire.$k.b >= 0, wv.cx, pick(wv.b, x.0, x.1, x.2, x.3, x.4, x.5, x.6, x.7, x.8, x.9, x.10, x.11, x.12, x.13, x.14, x.15))
+        let wv.by = if(dragging == wv.b and wire.$k.b >= 0, wv.cy, pick(wv.b, y.0, y.1, y.2, y.3, y.4, y.5, y.6, y.7, y.8, y.9, y.10, y.11, y.12, y.13, y.14, y.15))
         let wv.bw = pick(wv.b, w.0, w.1, w.2, w.3, w.4, w.5, w.6, w.7, w.8, w.9, w.10, w.11, w.12, w.13, w.14, w.15)
         let wv.bh = pick(wv.b, h.0, h.1, h.2, h.3, h.4, h.5, h.6, h.7, h.8, h.9, h.10, h.11, h.12, h.13, h.14, h.15)
         let wv.acx = wv.ax + wv.aw / 2
@@ -12136,20 +12139,22 @@ scene Session {
             show: wv.on
             opacity: 1 - wcut.$k
             group {
-                blur: 6
-                path { stroke: 8; color: if(wv.wait, amber, mint); opacity: if(wv.go, 22%, 9%) + 8% * wv.wait
+                blur: 7
+                path { stroke: 12; color: if(wv.wait, amber, mint); opacity: if(wv.go, 34%, 20%) + 10% * wv.wait
                     move wv.p0x, wv.p0y
                     curve wv.mx, wv.my via wv.c1x, wv.c1y
                     curve wv.p1x, wv.p1y via wv.c2x, wv.c2y
                 }
             }
-            path { stroke: 2 + 4 * (1 - wborn.$k); color: if(wv.wait, amber, mint); opacity: if(wv.go or wv.wait, 85%, 45%) + 40% * (1 - wborn.$k)
+            path { stroke: 3 + 4 * (1 - wborn.$k); color: if(wv.wait, amber, mint); opacity: if(wv.go or wv.wait, 95%, 80%)
                 move wv.p0x, wv.p0y
                 curve wv.mx, wv.my via wv.c1x, wv.c1y
                 curve wv.p1x, wv.p1y via wv.c2x, wv.c2y
             }
-            ellipse { at: wv.p0x, wv.p0y; radius: 3.5; color: if(wv.wait, amber, mint); opacity: 85% }
-            ellipse { at: wv.p1x, wv.p1y; radius: 3.5; color: if(wv.wait, amber, mint); opacity: 85% }
+            ellipse { at: wv.p0x, wv.p0y; radius: 5.5; color: if(wv.wait, amber, mint) }
+            ellipse { at: wv.p0x, wv.p0y; radius: 2.2; color: #f2fffa }
+            ellipse { at: wv.p1x, wv.p1y; radius: 5.5; color: if(wv.wait, amber, mint) }
+            ellipse { at: wv.p1x, wv.p1y; radius: 2.2; color: #f2fffa }
             // What goes along it: a drop of light and its trail.
             group {
                 show: wv.go
