@@ -44,11 +44,16 @@ fn say(orders: &[String]) -> Vec<String> {
     out.map(|o| String::from_utf8_lossy(&o.stdout).lines().map(str::to_owned).collect()).unwrap_or_default()
 }
 
-/// The wires: which slots each joins, by its place (`wire.K`).
-fn wires() -> Vec<(usize, i64, i64)> {
+/// The wires: which slots each joins, by its place (`wire.K`), and what the
+/// person called it.
+fn wires() -> Vec<(usize, i64, i64, String)> {
     let orders: Vec<String> = (0..8).flat_map(|k| [format!("get wire.{k}.a"), format!("get wire.{k}.b")]).collect();
     let got: Vec<i64> = say(&orders).iter().map(|v| v.trim().parse::<f64>().map_or(-1, |v| v.round() as i64)).collect();
-    (0..8).filter_map(|k| Some((k, *got.get(2 * k)?, *got.get(2 * k + 1)?))).filter(|(_, a, b)| *a >= 0 && *b >= 0).collect()
+    (0..8)
+        .filter_map(|k| Some((k, *got.get(2 * k)?, *got.get(2 * k + 1)?)))
+        .filter(|(_, a, b)| *a >= 0 && *b >= 0)
+        .map(|(k, a, b)| (k, a, b, say(&[format!("get wire.{k}.label")]).first().map(|l| l.trim().to_owned()).unwrap_or_default()))
+        .collect()
 }
 
 /// The terminal layer whose terminal is that process, if one.
@@ -65,7 +70,7 @@ struct Here {
     slot: usize,
     wins: Vec<Win>,
     layers: Vec<(i32, Info)>,
-    wires: Vec<(usize, i64, i64)>,
+    wires: Vec<(usize, i64, i64, String)>,
 }
 
 /// Who calls: its terminal's layer, and the window that terminal is.
@@ -84,11 +89,16 @@ impl Here {
     fn wired(&self) -> Vec<(usize, &Win, bool)> {
         self.wires
             .iter()
-            .filter_map(|(k, a, b)| {
+            .filter_map(|(k, a, b, _)| {
                 let (mine_is_a, other) = if *a as usize == self.slot { (true, *b) } else if *b as usize == self.slot { (false, *a) } else { return None };
                 self.wins.iter().find(|w| w.slot == other as usize).map(|w| (*k, w, mine_is_a))
             })
             .collect()
+    }
+
+    /// What the person called that wire, if anything.
+    fn label(&self, k: usize) -> &str {
+        self.wires.iter().find(|w| w.0 == k).map_or("", |w| w.3.as_str())
     }
 
     /// The one named: by its number, or by what runs in it if only one is that.
@@ -96,6 +106,8 @@ impl Here {
         let wired = self.wired();
         let found: Vec<&(usize, &Win, bool)> = match name.trim_start_matches('#').parse::<usize>() {
             Ok(n) => wired.iter().filter(|(_, w, _)| w.slot == n).collect(),
+            // By the wire's name first («tests»), then by what runs there.
+            Err(_) if wired.iter().any(|(k, _, _)| self.label(*k).eq_ignore_ascii_case(name)) => wired.iter().filter(|(k, _, _)| self.label(*k).eq_ignore_ascii_case(name)).collect(),
             Err(_) => wired
                 .iter()
                 .filter(|(_, w, _)| {
@@ -113,7 +125,7 @@ impl Here {
     }
 }
 
-fn line_of(slot: usize, w: &Win, layer: Option<&(i32, Info)>) -> String {
+fn line_of(slot: usize, w: &Win, layer: Option<&(i32, Info)>, label: &str) -> String {
     let g = |k: &str| layer.and_then(|(_, i)| i.get(k)).cloned().unwrap_or_default();
     let what = match layer {
         None => "no terminal of its own to read or type in".to_owned(),
@@ -129,7 +141,8 @@ fn line_of(slot: usize, w: &Win, layer: Option<&(i32, Info)>) -> String {
             format!("{runs}{state} in {}", tilde(&g("cwd")))
         }
     };
-    format!("{slot}  «{}»  {what}", w.title)
+    let named = if label.is_empty() { String::new() } else { format!("[{label}]  ") };
+    format!("{slot}  {named}«{}»  {what}", w.title)
 }
 
 fn tilde(path: &str) -> String {
@@ -257,6 +270,7 @@ pub fn run(args: &[String]) -> i32 {
 
 const USAGE: &str = "pleamar-wm link — the windows wired to yours (on a canvas, the person wires them)
   whoami                          which window you are, and what is wired to it
+  label N NAME                    names the wire to N («tests»): shown on it, and N can be NAME
   list                            the windows wired to yours: number, title, what runs there
   read N [LINES]                  the last lines of its terminal (200)
   send N TEXT [--enter]           TEXT typed into it as a paste; --enter presses Enter after
@@ -266,7 +280,8 @@ const USAGE: &str = "pleamar-wm link — the windows wired to yours (on a canvas
                                   hands TASK to the agent there. Without --wait it returns at
                                   once and the answer is typed into your terminal when it is
                                   done; with --wait, the answer is what this prints.
-N is a window's number from `list`, or the agent that runs there (`codex`) if only one is.";
+N is a window's number from `list`, its wire's name (`tests`), or the agent that runs there
+(`codex`) if only one is.";
 
 fn go(args: &[String]) -> Result<String, String> {
     let verb = args.first().map(String::as_str).unwrap_or("");
@@ -282,8 +297,8 @@ fn go(args: &[String]) -> Result<String, String> {
                 out.push_str("No window is wired to yours.");
             } else {
                 out.push_str("Wired to it:\n");
-                for (_, w, _) in wired {
-                    out.push_str(&format!("  {}\n", line_of(w.slot, w, layer_of(w.pid, &h.layers).as_ref())));
+                for (k, w, _) in wired {
+                    out.push_str(&format!("  {}\n", line_of(w.slot, w, layer_of(w.pid, &h.layers).as_ref(), h.label(k))));
                 }
             }
             Ok(out)
@@ -294,7 +309,16 @@ fn go(args: &[String]) -> Result<String, String> {
             if wired.is_empty() {
                 return Ok("No window is wired to yours. The person wires them: on a canvas (Super+Shift+W), dragging the drop at the start of a window's title bar to another window.".into());
             }
-            Ok(wired.iter().map(|(_, w, _)| line_of(w.slot, w, layer_of(w.pid, &h.layers).as_ref())).collect::<Vec<_>>().join("\n"))
+            Ok(wired.iter().map(|(k, w, _)| line_of(w.slot, w, layer_of(w.pid, &h.layers).as_ref(), h.label(*k))).collect::<Vec<_>>().join("\n"))
+        }
+        // The wire to that window, named («tests»): shown on it, and a name to give it.
+        "label" => {
+            let name = rest.first().ok_or(USAGE)?;
+            let h = here()?;
+            let (k, w, _, _) = h.target(name)?;
+            let text = words(&rest[1..]).replace(['\n', '\t'], " ");
+            say(&[format!("text wire.{k}.label {text}")]);
+            Ok(if text.is_empty() { format!("the wire to window {} has no name now", w.slot) } else { format!("the wire to window {} is «{text}»", w.slot) })
         }
         "read" | "send" | "keys" | "wait" | "delegate" => {
             let name = rest.first().ok_or(USAGE)?;
