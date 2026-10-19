@@ -29,9 +29,17 @@ fn link_dir() -> String {
 }
 
 /// Where the layers listen.
+/// Each session's apart, in its own place (`PLEAMAR_SOCKETS`, which the
+/// session gives what it starts): a nested or screenless session never sees
+/// the terminals of the one it runs in, nor they its own.
 pub fn socket_dir() -> String {
-    let run = std::env::var("XDG_RUNTIME_DIR").ok().filter(|d| !d.is_empty()).unwrap_or_else(|| "/tmp".into());
-    format!("{run}/pleamar/term")
+    match std::env::var("PLEAMAR_SOCKETS").ok().filter(|d| !d.is_empty()) {
+        Some(d) => format!("{d}/term"),
+        None => {
+            let run = std::env::var("XDG_RUNTIME_DIR").ok().filter(|d| !d.is_empty()).unwrap_or_else(|| "/tmp".into());
+            format!("{run}/pleamar/term")
+        }
+    }
 }
 
 /// The user's shell, as the system says it: `SHELL`, or the passwd entry.
@@ -86,7 +94,15 @@ pub fn as_shell() {
     // SAFETY: isatty only asks.
     let on_terminal = unsafe { libc::isatty(0) == 1 && libc::isatty(1) == 1 };
     let a_command = args.iter().skip(1).any(|a| a == "-c" || a == "--command");
-    let inside = std::env::var_os("PLEAMAR_TERMINAL").is_some();
+    // Inside a layer already: on the very terminal one made (`PLEAMAR_TTY`).
+    // Not just because the variable came down from a terminal further up —a
+    // program started there, which starts a terminal of its own—.
+    // SAFETY: ttyname's answer is read at once.
+    let here = unsafe {
+        let t = libc::ttyname(0);
+        (!t.is_null()).then(|| std::ffi::CStr::from_ptr(t).to_string_lossy().into_owned())
+    };
+    let inside = here.is_some() && std::env::var("PLEAMAR_TTY").ok() == here;
     if on_terminal && !a_command && !inside && std::env::var_os("PLEAMAR_NO_TERM").is_none() {
         if let Err(e) = layer(&real, &args) {
             eprintln!("pleamar-wm · the terminal layer could not start ({e}): the shell as it is");
@@ -204,7 +220,11 @@ fn layer(real: &str, args: &[std::ffi::OsString]) -> Result<(), String> {
             if slave > 2 {
                 libc::close(slave);
             }
-            exec(real, args, &[("PLEAMAR_TERMINAL", me.to_string())]);
+            let tty = {
+                let t = libc::ttyname(0);
+                if t.is_null() { String::new() } else { std::ffi::CStr::from_ptr(t).to_string_lossy().into_owned() }
+            };
+            exec(real, args, &[("PLEAMAR_TERMINAL", me.to_string()), ("PLEAMAR_TTY", tty)]);
         }
         libc::close(slave);
         // This terminal raw: every byte, Ctrl+C included, goes to the shell's,
@@ -567,8 +587,13 @@ pub fn ask(socket: &str, question: &str) -> Result<String, String> {
 /// The layers running now: their id and what each says of itself. A socket
 /// left by one that is gone is taken away.
 pub fn layers() -> Vec<(i32, std::collections::BTreeMap<String, String>)> {
+    layers_in(&socket_dir())
+}
+
+/// The same, of the session whose layers listen in that folder.
+pub fn layers_in(folder: &str) -> Vec<(i32, std::collections::BTreeMap<String, String>)> {
     let mut out = Vec::new();
-    let Ok(dir) = std::fs::read_dir(socket_dir()) else { return out };
+    let Ok(dir) = std::fs::read_dir(folder) else { return out };
     for e in dir.flatten() {
         let path = e.path();
         let Some(id) = path.file_stem().and_then(|n| n.to_str()).and_then(|n| n.parse::<i32>().ok()) else { continue };
@@ -588,12 +613,96 @@ pub fn layers() -> Vec<(i32, std::collections::BTreeMap<String, String>)> {
     out
 }
 
-/// What an agent's screen shows when it asks the person something (a
-/// permission, a choice): Claude Code's and Codex's questions.
-fn asks_the_person(screen: &str) -> bool {
-    const ASKS: [&str; 7] = ["Do you want to", "Would you like to", "❯ 1. Yes", "Allow command", "Approve", "(y/n)", "[y/N]"];
-    let tail: Vec<&str> = screen.lines().rev().take(25).collect();
-    tail.iter().any(|l| ASKS.iter().any(|a| l.contains(a)))
+/// A question an agent's screen asks the person: what it says, and its
+/// options —numbered, one of them under the cursor— or a yes/no.
+#[derive(Debug, PartialEq)]
+pub struct Question {
+    pub text: String,
+    pub options: Vec<(u32, String)>,
+    /// Which of `options` the cursor is on.
+    pub cursor: usize,
+    pub yes_no: bool,
+}
+
+/// A line without the box an agent draws round its dialogs.
+fn unboxed(l: &str) -> &str {
+    l.trim().trim_matches(|c| matches!(c, '│' | '┃' | '║' | '|')).trim()
+}
+
+/// `❯ 2. Yes, and don't ask again`: whether the cursor is on it, its number, what it says.
+fn option_line(l: &str) -> Option<(bool, u32, String)> {
+    let t = unboxed(l);
+    let (cursor, rest) = match t.chars().next() {
+        Some(c @ ('❯' | '›' | '>' | '▶' | '→')) => (true, t[c.len_utf8()..].trim_start()),
+        _ => (false, t),
+    };
+    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+    let n: u32 = digits.parse().ok()?;
+    let after = rest[digits.len()..].strip_prefix(['.', ')'])?;
+    let text = after.strip_prefix(' ')?.trim();
+    (!text.is_empty()).then(|| (cursor, n, text.to_owned()))
+}
+
+/// What a selection menu or a yes/no at the bottom of an agent's screen
+/// asks, if one is there. A menu is numbered options counting from 1 with
+/// a cursor on one of them (a numbered list in an answer has no cursor).
+pub fn question(screen: &str) -> Option<Question> {
+    let lines: Vec<&str> = screen.lines().collect();
+    let tail = &lines[lines.len().saturating_sub(40)..];
+    // The last run of options 1, 2, 3… (lines that describe one may come between).
+    let mut best: Option<(usize, Vec<(usize, bool, u32, String)>)> = None;
+    let mut run: Vec<(usize, bool, u32, String)> = Vec::new();
+    for (k, l) in tail.iter().enumerate() {
+        if let Some((c, n, t)) = option_line(l) {
+            if n == 1 {
+                run = vec![(k, c, n, t)];
+            } else if run.last().is_some_and(|o| o.2 + 1 == n) {
+                run.push((k, c, n, t));
+            } else {
+                run.clear();
+            }
+            if run.len() >= 2 && run.iter().any(|o| o.1) {
+                best = Some((run[0].0, run.clone()));
+            }
+        }
+    }
+    // Only one still being asked: below its last option nothing but the box's
+    // edge or how to answer («Enter to select · Esc to cancel»). One already
+    // answered, with the agent's work after it, asks nothing.
+    let footer = |l: &&str| {
+        let t = unboxed(l).trim_matches(|c| matches!(c, '─' | '╭' | '╮' | '╰' | '╯' | '┌' | '┐' | '└' | '┘'));
+        let low = t.to_lowercase();
+        t.is_empty() || low.contains("esc") || low.contains("enter") || low.contains("navigate") || low.contains("select") || low.contains("confirm")
+    };
+    let best = best.filter(|(_, opts)| {
+        let last = opts.last().map_or(0, |o| o.0);
+        // (Lines that only go on describing the last option, indented, are its.)
+        tail[last + 1..].iter().all(|l| footer(l) || (l.starts_with("     ") && !unboxed(l).is_empty() && option_line(l).is_none()))
+    });
+    if let Some((first, opts)) = best {
+        // What it asks: the lines just above the options, up to a blank one.
+        let mut text: Vec<&str> = Vec::new();
+        for l in tail[..first].iter().rev() {
+            let t = unboxed(l).trim_matches(|c| matches!(c, '─' | '╭' | '╮' | '╰' | '╯' | '┌' | '┐' | '└' | '┘'));
+            if t.is_empty() {
+                if text.is_empty() {
+                    continue;
+                }
+                break;
+            }
+            text.push(t);
+            if text.len() == 3 {
+                break;
+            }
+        }
+        text.reverse();
+        let cursor = opts.iter().position(|o| o.1).unwrap_or(0);
+        return Some(Question { text: text.join(" "), options: opts.into_iter().map(|o| (o.2, o.3)).collect(), cursor, yes_no: false });
+    }
+    // A yes/no, on the last line that says something.
+    let last = tail.iter().rev().map(|l| unboxed(l)).find(|l| !l.is_empty())?;
+    let yn = ["[y/N]", "[Y/n]", "(y/n)", "[y/n]", "(Y/n)", "(y/N)"];
+    yn.iter().any(|m| last.contains(m)).then(|| Question { text: last.to_owned(), options: Vec::new(), cursor: 0, yes_no: true })
 }
 
 /// For the scene, every second: in which windows (`windows`, `slot pid`, as
@@ -603,6 +712,8 @@ fn asks_the_person(screen: &str) -> bool {
 /// its own: a terminal slow to answer never holds the compositor.
 pub fn watch_agents(windows: String, to_render: std::sync::mpsc::Sender<pleamar::scene::ToRender>) {
     use pleamar::scene::{intern, ToRender};
+    // Its session's layers: next to the windows file, as what it starts is told.
+    let folder = std::path::Path::new(&windows).parent().map(|p| format!("{}/term", p.display())).unwrap_or_else(socket_dir);
     std::thread::spawn(move || {
         let home = std::env::var("HOME").unwrap_or_default();
         let mut said: std::collections::HashMap<usize, (u8, String)> = std::collections::HashMap::new();
@@ -613,7 +724,7 @@ pub fn watch_agents(windows: String, to_render: std::sync::mpsc::Sender<pleamar:
                 let mut w = l.split('\t').next()?.split_whitespace();
                 Some((w.next()?.parse().ok()?, w.next()?.parse().ok()?))
             }).collect();
-            let all = if slots.is_empty() { Vec::new() } else { layers() };
+            let all = if slots.is_empty() { Vec::new() } else { layers_in(&folder) };
             let mut now: std::collections::HashMap<usize, (u8, String)> = std::collections::HashMap::new();
             for (slot, pid) in &slots {
                 let mine: Vec<&(i32, std::collections::BTreeMap<String, String>)> = all.iter().filter(|(_, i)| i.get("terminal").and_then(|t| t.parse::<u32>().ok()) == Some(*pid)).collect();
@@ -625,7 +736,7 @@ pub fn watch_agents(windows: String, to_render: std::sync::mpsc::Sender<pleamar:
                 let working = info.get("state").map(String::as_str) == Some("working");
                 let state = if working {
                     1
-                } else if ask(&format!("{}/{id}.sock", socket_dir()), "read 25").is_ok_and(|s| asks_the_person(&s)) {
+                } else if ask(&format!("{folder}/{id}.sock"), "read 40").is_ok_and(|s| question(&s).is_some()) {
                     3
                 } else {
                     2
@@ -728,6 +839,59 @@ mod tests {
         assert_eq!(key_bytes("ctrl+c", false).unwrap(), [3]);
         assert_eq!(key_bytes("enter", false).unwrap(), b"\r");
         assert!(key_bytes("hyper+q", false).is_none());
+    }
+
+    #[test]
+    fn a_permission_dialog_is_a_question() {
+        let screen = "● I'll remove it.
+
+╭──────────────────────────────────────────────────────╮
+│ Bash command                                         │
+│                                                      │
+│   rm notes.tmp                                       │
+│   Remove the scratch file                            │
+│                                                      │
+│ Do you want to proceed?                              │
+│ ❯ 1. Yes                                             │
+│   2. Yes, and don't ask again for rm commands        │
+│   3. No, and tell Claude what to do differently (esc) │
+╰──────────────────────────────────────────────────────╯";
+        let q = question(screen).unwrap();
+        assert_eq!(q.text, "Do you want to proceed?");
+        assert_eq!(q.options.len(), 3);
+        assert_eq!(q.options[1], (2, "Yes, and don't ask again for rm commands".to_owned()));
+        assert_eq!(q.cursor, 0);
+    }
+
+    #[test]
+    fn a_choice_with_descriptions_between_is_a_question() {
+        let screen = "☐ Colour
+
+Which colour should the bar be?
+
+  1. Mint
+     The default
+❯ 2. Coral
+     Warmer
+  3. Type something.
+
+Enter to select · ↑/↓ to navigate · Esc to cancel";
+        let q = question(screen).unwrap();
+        assert_eq!(q.text, "Which colour should the bar be?");
+        assert_eq!(q.options.iter().map(|o| o.0).collect::<Vec<_>>(), [1, 2, 3]);
+        assert_eq!(q.cursor, 1);
+    }
+
+    #[test]
+    fn a_question_answered_already_is_no_question() {
+        let screen = "│ Do you want to proceed?   │\n│ ❯ 1. Yes                  │\n│   2. No                   │\n╰───────────────────────────╯\nchosen: 1\nANSWER: DONE\n> ";
+        assert_eq!(question(screen), None);
+    }
+
+    #[test]
+    fn a_numbered_list_in_an_answer_is_not_a_question() {
+        assert_eq!(question("● Steps:\n  1. Build it\n  2. Test it\n\n❯ "), None);
+        assert!(question("Overwrite notes.md? [y/N]").unwrap().yes_no);
     }
 
     #[test]

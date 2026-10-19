@@ -1650,10 +1650,12 @@ impl State {
         }
         // Nor Hyprland's: a program that asks it things would get another desktop's answers.
         c.env_remove("HYPRLAND_INSTANCE_SIGNATURE");
-        // Its terminals, through the layer (term.rs).
+        // Its terminals, through the layer (term.rs); not as the terminal
+        // this session may have been started from.
         if let Some((link, real)) = crate::term::session_shell() {
             c.env("SHELL", link).env("PLEAMAR_REAL_SHELL", real);
         }
+        c.env_remove("PLEAMAR_TERMINAL").env_remove("PLEAMAR_TTY");
         // In a session of its own, the scenes it starts (Marea) listen apart
         // from the ones of another desktop of the same user that may be open.
         // And the window manager's scene is there as `wm`: Marea switches it

@@ -44,10 +44,11 @@ the open windows without closing anything.
   wire is the person's word: an agent in one terminal (Claude Code, Codex,
   any with a shell) may then read the other, type in it and hand it tasks
   with `pleamar-wm link`: `whoami`, `list`, `label N NAME`, `read N`, `send N TEXT --enter`,
-  `keys N enter`, `wait N`, and `delegate N TASK` —the task goes in as a
+  `keys N enter`, `wait N`, `ask N` and `answer N 2` —what the agent there asks its person (a permission, a choice, a yes/no) and an answer to it, by number, by the words of an option or as free words where it lets you type; the window says who answered—, and `delegate N TASK` —the task goes in as a
   paste with a line that says where it comes from, a drop of light runs
   along the wire while it is worked on, and the answer comes back: printed
-  with `--wait`, or typed into the asking agent's terminal when it is done—.
+  with `--wait`, or typed into the asking agent's terminal when it is done; a
+  question it stops to ask on the way comes back the same way—.
   Each window with an agent says in its title bar what it is and where, and
   whether it works, is ready or waits for you (its edge goes amber); zoomed
   out, a canvas shows it big over each window, and one waiting out of sight

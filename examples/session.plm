@@ -413,6 +413,9 @@ scene Session {
     }
     fact wedit = -1                      // the wire whose name is being written
     fact hovwin = -1                     // the window under the mouse
+    // An agent answered what another window's agent asked its person, through
+    // a wire (`pleamar-wm link answer`): window × 100 + who answered + 1.
+    event answered
     fact wiring = -1                     // the window whose port is being dragged
     fact wtgt = -1                       // the one under the mouse meanwhile
     fact wnew.a = -1
@@ -10206,6 +10209,14 @@ scene Session {
         // what and where («claude · ~/Proyectos/pleamar»).
         fact ag.$i = 0
         text agt.$i = ""
+        // What it asked was answered by another window's agent: said on it a while.
+        fact ansby.$i = -1
+        prop ansv.$i = 0 ~260ms
+        on answered(v) while floor(v / 100) == i {
+            ansby.$i = mod(v, 100) - 1
+            ansv.$i: 1 ~0ms
+            ansv.$i: 0 after 8000ms
+        }
         fact stamp.$i = 0
         // Which monitor its free place was made on: monitors differ in size,
         // so a place from the other one is not a place here.
@@ -10823,6 +10834,19 @@ scene Session {
                 box { from: x - 2, y - 2; size: w + 4, h + 4; corner: 13; stroke: 4; color: mint; opacity: 45% * wlit.$i }
             }
             box { from: x, y; size: w, h; corner: 12; stroke: 2; color: mint; opacity: 85% * wlit.$i; show: wlit.$i > 0.01 }
+            // Answered by another window's agent, through a wire: who.
+            group {
+                show: ansv.$i > 0.01
+                opacity: ansv.$i
+                body {
+                    color: #0c0e10
+                    rim: 16%
+                    shadow: 0, 6, 16, 50%
+                    box { at: x + w / 2, y + tb + 26; size: 236, 28; corner: 14 }
+                }
+                box { at: x + w / 2, y + tb + 26; size: 236, 28; corner: 14; stroke: 1.4; color: amber; opacity: 75% }
+                text "answered by window {ansby.$i, 0}, through a wire" { at: x + w / 2, y + tb + 26; anchor: center; size: 11; color: ink }
+            }
             // Waiting for you: its edge, amber, beating.
             box { from: x, y; size: w, h; corner: 12; stroke: 2; color: amber; opacity: (50% + 30% * sin(time * 240)) * smooth(0.75, 1, water); show: ag.$i > 2.5 }
             // Far away (a canvas zoomed out): what each agent is doing, big.
