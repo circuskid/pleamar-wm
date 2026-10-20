@@ -180,7 +180,7 @@ fn main() {
     // `pleamar-wm headless scene.plm [options]`: the session's painting with no screen, to check it.
     if args.first().map(String::as_str) == Some("headless") {
         args.remove(0);
-        let scene = if args.first().is_some_and(|a| !a.starts_with("--")) { args.remove(0) } else { default_scene() };
+        let scene = if args.first().is_some_and(|a| !a.starts_with("--")) { args.remove(0) } else { default_scene(true) };
         nest::set_scene_name(&scene);
         layers::expect_monitors();
         // Its scene listens apart: under the same name as a real session's
@@ -219,7 +219,7 @@ fn main() {
         args.remove(0);
         // Rebuilt under it, it would start again and every window would go with it.
         pleamar::stay_on_update();
-        let scene = if args.first().is_some_and(|a| !a.starts_with("--")) { args.remove(0) } else { default_scene() };
+        let scene = if args.first().is_some_and(|a| !a.starts_with("--")) { args.remove(0) } else { default_scene(false) };
         nest::set_scene_name(&scene);
         layers::expect_monitors();
         pleamar::provide_before_quit(Box::new(|| {
@@ -385,13 +385,16 @@ fn write_scene(dir: &str, refresh: bool) -> i32 {
 }
 
 /// The scene when none is said: the user's own (~/.config/pleamar/wm/session.plm),
-/// or the one that comes with it, written where it can be read.
-fn default_scene() -> String {
+/// or the one that comes with it, written where it can be read. A screenless
+/// one writes it in a folder of its own: the session's copy is reloaded when
+/// it changes, and an older build would put the desktop back in time.
+fn default_scene(headless: bool) -> String {
     if let Some(own) = config::user_dir().map(|d| format!("{d}/wm/session.plm")).filter(|p| std::path::Path::new(p).exists()) {
         return own;
     }
     // (Named session.plm: a scene answers by its file's name, `--say session`.)
-    let dir = format!("{}/pleamar-wm", std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".into()));
+    let runtime = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".into());
+    let dir = if headless { format!("{runtime}/pleamar-wm-headless") } else { format!("{runtime}/pleamar-wm") };
     let _ = std::fs::create_dir_all(&dir);
     write_scene(&dir, true);
     format!("{dir}/session.plm")
