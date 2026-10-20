@@ -512,6 +512,8 @@ struct State {
     thumbs: capture::Thumbs,
     /// The program's surface the pointer is on, or the one with the keyboard.
     panel_pointer: Option<u64>,
+    /// The surface a program draws its own cursor on, while it is the one shown.
+    cursor_surface: Option<WlSurface>,
     panel_keyboard: Option<u64>,
     /// Whether the program's surface with the keyboard has it because it
     /// asked for all of it (then it goes back when it stops asking).
@@ -826,6 +828,7 @@ fn run(max: usize, to_render: Sender<ToRender>, rx: Channel<ToNest>, ready: std:
         pictures: HashMap::new(),
         thumbs: capture::Thumbs::new(thumbs_tx),
         panel_pointer: None,
+        cursor_surface: None,
         panel_keyboard: None,
         exclusive_keyboard: false,
         _session_lock: SessionLockManagerState::new::<State, _>(&dh, |_| true),
@@ -2845,6 +2848,25 @@ impl State {
         });
     }
 
+    /// The cursor a program draws itself, to the session: its pixels in shared
+    /// memory and its tip, from units to them. One on the card (rare for a
+    /// cursor) is not read: the arrow stays.
+    fn send_cursor_picture(&self) {
+        let Some(s) = &self.cursor_surface else { return };
+        let picture = with_states(s, |st| {
+            let c = st.data_map.get::<Mutex<Content>>()?.lock().unwrap();
+            if c.data.is_empty() || c.px.0 == 0 || c.size.0 == 0 {
+                return None;
+            }
+            let hot = st.data_map.get::<Mutex<smithay::input::pointer::CursorImageAttributes>>().map(|a| a.lock().unwrap().hotspot).unwrap_or_default();
+            let k = c.px.0 as f64 / c.size.0 as f64;
+            Some(std::sync::Arc::new((c.px, c.data.clone(), ((hot.x as f64 * k).round() as i32, (hot.y as f64 * k).round() as i32))))
+        });
+        if picture.is_some() {
+            layers::custom_cursor(picture);
+        }
+    }
+
     /// The drag icon, on each monitor (only the one with the pointer shows it
     /// where it can be seen): it takes no pointer, so what is under it does.
     fn show_drag_icon(&mut self) {
@@ -3511,6 +3533,8 @@ impl CompositorHandler for State {
             if let Ok(owner) = smithay::desktop::find_popup_root_surface(&popup) {
                 self.dirty.push(owner);
             }
+        } else if self.cursor_surface.as_ref() == Some(&root) {
+            self.send_cursor_picture();
         } else if self.drag.as_ref().is_some_and(|d| d.icon.as_ref() == Some(&root)) {
             self.show_drag_icon();
         } else if let Some(x) = self.unmanaged.iter().find(|x| x.wl_surface().as_ref() == Some(&root)).cloned() {
@@ -3774,6 +3798,20 @@ impl SeatHandler for State {
         // The agent's cursor is the scene's to draw, not yours to change.
         if agent::is_agent_seat(seat) {
             return;
+        }
+        // None at all (a game, a film full screen): hidden, over a window too.
+        layers::hide_cursor(matches!(image, CursorImageStatus::Hidden));
+        // One of its own: its pictures, as it draws them (the arrow until the first).
+        match &image {
+            CursorImageStatus::Surface(s) => {
+                self.cursor_surface = Some(s.clone());
+                self.send_cursor_picture();
+            }
+            _ => {
+                if self.cursor_surface.take().is_some() {
+                    layers::custom_cursor(None);
+                }
+            }
         }
         use smithay::input::pointer::CursorIcon as I;
         let kind = match image {

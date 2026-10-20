@@ -437,6 +437,41 @@ pub fn set_cursor_sink(tx: channel::Sender<(bool, pleamar::scene::Cursor)>) {
     *CURSOR.lock().unwrap() = Some(tx);
 }
 
+/// A program under the pointer asked for no cursor at all (a game, a film
+/// full screen): the session hides it until one is asked for again.
+static CURSOR_HIDDEN: Mutex<Option<channel::Sender<bool>>> = Mutex::new(None);
+static HIDDEN_NOW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn set_cursor_hidden_sink(tx: channel::Sender<bool>) {
+    *CURSOR_HIDDEN.lock().unwrap() = Some(tx);
+}
+
+/// Told only when it changes: a program's cursor changes on every link.
+pub fn hide_cursor(hidden: bool) {
+    if HIDDEN_NOW.swap(hidden, std::sync::atomic::Ordering::Relaxed) == hidden {
+        return;
+    }
+    if let Some(tx) = CURSOR_HIDDEN.lock().unwrap().as_ref() {
+        let _ = tx.send(hidden);
+    }
+}
+
+/// A cursor a program draws itself (a game's, GTK 3's from its theme): its
+/// pixels as the card takes them (ARGB8888), their size, and its tip in them.
+pub type CursorPicture = std::sync::Arc<((usize, usize), Vec<u8>, (i32, i32))>;
+static CUSTOM_CURSOR: Mutex<Option<channel::Sender<Option<CursorPicture>>>> = Mutex::new(None);
+
+pub fn set_custom_cursor_sink(tx: channel::Sender<Option<CursorPicture>>) {
+    *CUSTOM_CURSOR.lock().unwrap() = Some(tx);
+}
+
+/// Each new picture of it, or none: back to the shapes the session has.
+pub fn custom_cursor(picture: Option<CursorPicture>) {
+    if let Some(tx) = CUSTOM_CURSOR.lock().unwrap().as_ref() {
+        let _ = tx.send(picture);
+    }
+}
+
 pub fn cursor(from_program: bool, c: pleamar::scene::Cursor) {
     if let Some(tx) = CURSOR.lock().unwrap().as_ref() {
         let _ = tx.send((from_program, c));

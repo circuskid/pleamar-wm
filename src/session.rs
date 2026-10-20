@@ -222,6 +222,10 @@ struct State {
     /// the monitors' scales ask for: its image on the card and its tip, both turned.
     cursors: Vec<(Cursor, u8, u32, gbm::BufferObject<()>, (i32, i32))>,
     shown: Option<Cursor>,
+    /// A program under the pointer asked for none: off every monitor.
+    hidden: bool,
+    /// Or one it draws itself: on the card, with its tip, and as a picture.
+    custom: Option<(gbm::BufferObject<()>, (i32, i32), std::sync::Arc<(Vec<u8>, (i32, i32))>)>,
     /// What the scene asks for, and what a program's surface under the pointer does.
     scene_cursor: Cursor,
     program_cursor: Cursor,
@@ -366,7 +370,7 @@ fn run(surfaces: Vec<Surface>, to_render: Sender<ToRender>) -> Result<(), String
     layers::set_card(drm.clone());
     layers::register(monitors.iter().map(|m| (MonitorInfo { name: m.name.clone(), size: m.size, x: m.x, y: m.y, mhz: m.mhz, scale: m.scale }, m.screen.clone())).collect());
     let mover = CursorMover::new(drm.clone());
-    let mut state = State { mover, session, drm, monitors, libinput, to_render: to_render.clone(), keymap, pointer: first, cursors: Vec::new(), shown: None, scene_cursor: Cursor::Normal, program_cursor: Cursor::Normal, scroll: 0.0, scroll_sideways: 0.0, swipe: None, pinch: None, last_touch: std::time::Instant::now(), last_input: std::time::Instant::now(), dark_for_idle: false, route: Route::new(to_render), cursor_pictures: Vec::new(), handle: event_loop.handle(), gbm: gbm.clone(), surfaces, cursor_kind, sheets, next_sheet, quit: false, desk_moved: 0.0, desk_moved_at: std::time::Instant::now() };
+    let mut state = State { mover, session, drm, monitors, libinput, to_render: to_render.clone(), keymap, pointer: first, cursors: Vec::new(), shown: None, hidden: false, custom: None, scene_cursor: Cursor::Normal, program_cursor: Cursor::Normal, scroll: 0.0, scroll_sideways: 0.0, swipe: None, pinch: None, last_touch: std::time::Instant::now(), last_input: std::time::Instant::now(), dark_for_idle: false, route: Route::new(to_render), cursor_pictures: Vec::new(), handle: event_loop.handle(), gbm: gbm.clone(), surfaces, cursor_kind, sheets, next_sheet, quit: false, desk_moved: 0.0, desk_moved_at: std::time::Instant::now() };
     state.make_cursors(&gbm);
     // The cursor the scene and the programs ask for, whenever it changes.
     let (cursor_tx, cursor_rx) = smithay::reexports::calloop::channel::channel::<(bool, Cursor)>();
@@ -380,6 +384,34 @@ fn run(surfaces: Vec<Surface>, to_render: Sender<ToRender>) -> Result<(), String
                 } else {
                     state.scene_cursor = c;
                 }
+                state.show_cursor();
+            }
+        })
+        .map_err(|e| e.to_string())?;
+    // And none at all, as a program under the pointer asks.
+    let (hidden_tx, hidden_rx) = smithay::reexports::calloop::channel::channel::<bool>();
+    layers::set_cursor_hidden_sink(hidden_tx);
+    event_loop
+        .handle()
+        .insert_source(hidden_rx, |event, _, state: &mut State| {
+            if let smithay::reexports::calloop::channel::Event::Msg(hidden) = event {
+                state.hidden = hidden;
+                // Shown again as it was: its shape and its picture are told anew.
+                state.shown = None;
+                state.show_cursor();
+            }
+        })
+        .map_err(|e| e.to_string())?;
+    // And one a program draws itself, each time it draws it.
+    let (custom_tx, custom_rx) = smithay::reexports::calloop::channel::channel::<Option<layers::CursorPicture>>();
+    layers::set_custom_cursor_sink(custom_tx);
+    let gbm_custom = gbm.clone();
+    event_loop
+        .handle()
+        .insert_source(custom_rx, move |event, _, state: &mut State| {
+            if let smithay::reexports::calloop::channel::Event::Msg(picture) = event {
+                state.custom = picture.and_then(|p| custom_cursor(&gbm_custom, &p));
+                state.shown = None;
                 state.show_cursor();
             }
         })
@@ -506,6 +538,21 @@ fn choose_mode(modes: &[Mode], wish: Option<&config::ModeWish>) -> Option<Mode> 
         Some(config::ModeWish::Highest) => modes.iter().max_by_key(|m| (m.size().0 as u32 * m.size().1 as u32, refresh_mhz(m))).copied(),
         _ => preferred,
     }
+}
+
+/// A program's own cursor on the card: its pixels in the plane's 64 × 64
+/// (what is beyond, cut), its tip inside it.
+fn custom_cursor(gbm: &Arc<Mutex<gbm::Device<DrmDeviceFd>>>, p: &layers::CursorPicture) -> Option<(gbm::BufferObject<()>, (i32, i32), std::sync::Arc<(Vec<u8>, (i32, i32))>)> {
+    let ((w, h), data, hot) = &**p;
+    let mut px = vec![0u8; 64 * 64 * 4];
+    for y in 0..(*h).min(64) {
+        let n = (*w).min(64) * 4;
+        px[y * 64 * 4..y * 64 * 4 + n].copy_from_slice(data.get(y * w * 4..y * w * 4 + n)?);
+    }
+    let hot = (hot.0.clamp(0, 63), hot.1.clamp(0, 63));
+    let mut bo = gbm.lock().unwrap().create_buffer_object::<()>(64, 64, gbm::Format::Argb8888, gbm::BufferObjectFlags::CURSOR | gbm::BufferObjectFlags::WRITE).ok()?;
+    bo.write(&px).ok()?;
+    Some((bo, hot, std::sync::Arc::new((px, hot))))
 }
 
 /// The cursor's size a scale asks for: XCURSOR_SIZE (24) times it.
@@ -803,8 +850,11 @@ impl State {
         // The monitor is put together in its pixels: from units to them, and
         // on one standing on its side, turned the way it stands.
         for (k, m) in self.monitors.iter().enumerate() {
-            let hot = self.shown.and_then(|c| self.cursor_of(c, m)).map_or((0, 0), |x| x.4);
-            let (cx, cy) = if k == on {
+            let hot = match &self.custom {
+                Some(c) => c.1,
+                None => self.shown.and_then(|c| self.cursor_of(c, m)).map_or((0, 0), |x| x.4),
+            };
+            let (cx, cy) = if k == on && !self.hidden {
                 let (x, y) = turned_point(m.turn, ((px - m.x as f64) * m.scale, (py - m.y as f64) * m.scale), (m.size.0 as f64, m.size.1 as f64));
                 (x as i32 - hot.0, y as i32 - hot.1)
             } else {
@@ -946,6 +996,19 @@ impl State {
 
     /// The cursor of whoever has the pointer, if it is not the one shown.
     fn show_cursor(&mut self) {
+        use smithay::reexports::drm::buffer::Buffer;
+        // A program's own, on every monitor (as it is: not turned).
+        if let Some((bo, hot, picture)) = &self.custom {
+            let (image, hot) = (|| CursorImage { size: Buffer::size(bo), format: Buffer::format(bo), pitch: Buffer::pitch(bo), handle: Buffer::handle(bo) }, *hot);
+            let crtcs: Vec<_> = self.monitors.iter().filter_map(|m| m.crtc).collect();
+            layers::set_pointer_picture((!self.hidden).then(|| picture.clone()));
+            for crtc in crtcs {
+                self.mover.shape(crtc, image(), hot);
+            }
+            self.mover.sent.clear();
+            self.move_pointer(0.0, 0.0);
+            return;
+        }
         let want = if matches!(self.route.hit, Hit::Client(..)) { self.program_cursor } else { self.scene_cursor };
         // A shape the theme lacks is shown as the arrow.
         let want = if self.cursors.iter().any(|c| c.0 == want) { want } else { Cursor::Normal };
@@ -955,7 +1018,6 @@ impl State {
         if self.shown == Some(want) {
             return;
         }
-        use smithay::reexports::drm::buffer::Buffer;
         for m in &self.monitors {
             let Some(crtc) = m.crtc else { continue };
             let Some((_, _, _, bo, hot)) = self.cursor_of(want, m) else { continue };
@@ -964,7 +1026,7 @@ impl State {
         }
         self.shown = Some(want);
         // For a picture of the screen, the biggest: as sharp as any monitor's.
-        layers::set_pointer_picture(self.cursor_pictures.iter().filter(|c| c.0 == want).max_by_key(|c| c.1).map(|c| c.2.clone()));
+        layers::set_pointer_picture(self.cursor_pictures.iter().filter(|c| c.0 == want && !self.hidden).max_by_key(|c| c.1).map(|c| c.2.clone()));
         // Its tip where the pointer is (told again: a new shape may have
         // put the plane back anywhere).
         self.mover.sent.clear();
