@@ -290,6 +290,8 @@ mod tests {
         assert_eq!(vrr_change("DP-3", Some(1), Some(0), true), Ok(Some(1)));
         assert_eq!(vrr_change("DP-3", Some(1), Some(1), false), Ok(Some(0)));
         assert_eq!(vrr_change("DP-3", Some(1), Some(1), true), Ok(None));
+        // Able, by its connector, but on a controller with no VRR_ENABLED.
+        assert!(vrr_change("DP-3", Some(1), None, true).unwrap_err().contains("no VRR_ENABLED"));
         assert!(vrr_change("HDMI-A-1", Some(0), Some(0), true).unwrap_err().contains("cannot vary"));
         assert!(vrr_change("HEADLESS-1", None, None, true).is_err());
         // Off where it cannot be on is no error: it already is.

@@ -767,6 +767,14 @@ fn make_monitor(drm: &DrmDeviceFd, gbm: &Arc<Mutex<gbm::Device<DrmDeviceFd>>>, n
     Monitor { name, crtc: Some(crtc), connector: Some(conn), on: true, size, turn, x: 0, y: 0, scale, screen, flips, mhz: refresh_mhz(&mode) }
 }
 
+/// The monitors, in their order, for the rest of the session to read by
+/// index: where each is, and whether it is lit. Both lists follow a re-sort
+/// together, or a power control made after it reads another monitor's.
+fn publish(monitors: &[Monitor]) {
+    layers::register(monitors.iter().map(|m| (MonitorInfo { name: m.name.clone(), size: m.size, x: m.x, y: m.y, mhz: m.mhz, scale: m.scale }, m.screen.clone())).collect());
+    layers::set_powered(monitors.iter().map(|m| m.on).collect());
+}
+
 /// Where the configuration puts them; the ones it does not place, left to
 /// right after them, as `PLEAMAR_MONITORS` says («DP-3,HDMI-A-1») and then in
 /// the card's order. Numbered left to right, top to bottom.
@@ -947,8 +955,10 @@ impl State {
         // Variable refresh first: the one part the card can still refuse.
         let mut done = Vec::new();
         if let Some(on) = wish.vrr {
+            // Not lit yet, it is kept for the first frame: whether that can
+            // be done is asked of the card now, while nothing has moved.
             if on && !m.flips.lock().unwrap().set {
-                crate::output::vrr_change(name, property(&self.drm, conn, "vrr_capable").map(|(_, v)| v), Some(0), true)?;
+                crate::output::vrr_change(name, property(&self.drm, conn, "vrr_capable").map(|(_, v)| v), property(&self.drm, crtc, "VRR_ENABLED").map(|(_, v)| v), true)?;
             }
             done.push(vrr_now_or_when_lit(&m.flips, name, on, || set_vrr(&self.drm, conn, crtc, name, on))?);
         }
@@ -985,7 +995,7 @@ impl State {
             st.dirty = true;
         }
         self.sheets = give_sheets(&self.monitors, &self.surfaces, &self.to_render, &self.cursor_kind, &mut self.next_sheet);
-        layers::register(self.monitors.iter().map(|m| (MonitorInfo { name: m.name.clone(), size: m.size, x: m.x, y: m.y, mhz: m.mhz, scale: m.scale }, m.screen.clone())).collect());
+        publish(&self.monitors);
         layers::tell(ToLayers::Monitors);
         // Which one is the phone's, for the scene (-1: none).
         let phone = self.monitors.iter().position(|m| m.crtc.is_none()).map_or(-1.0, |k| k as f32);
@@ -1750,7 +1760,7 @@ fn keep_ahead() {
 
 #[cfg(test)]
 mod tests {
-    use super::{ask, asked, forget_kept, place_row, sdr_value, turned_point, vrr_at_first_frame, vrr_now_or_when_lit, Flips, Pin, ASKED_AT, ASKED_VRR};
+    use super::{ask, asked, forget_kept, place_monitors, place_row, publish, Monitor, sdr_value, turned_point, vrr_at_first_frame, vrr_now_or_when_lit, Flips, Pin, ASKED_AT, ASKED_VRR};
     use std::sync::{Arc, Mutex};
 
     /// `transform` goes the way wlroots' and Hyprland's does, anticlockwise: with
@@ -1873,5 +1883,37 @@ mod tests {
         assert_eq!(asked(&ASKED_AT, "TEST-PIN-B"), None);
         forget_kept(&[]);
         assert_eq!(asked(&ASKED_AT, "TEST-PIN-A"), Some(((0, 1080), true)));
+    }
+
+    /// No screen: nothing is drawn in these tests.
+    use pleamar::wgpu;
+    struct Nowhere;
+    impl crate::screen::Output for Nowhere {
+        fn buffer(&mut self, _: &wgpu::Device, _: &[u64]) -> Option<(usize, wgpu::Texture)> {
+            None
+        }
+        fn show(&mut self, _: usize, _: pleamar::Sent, _: &wgpu::Device, _: &wgpu::Queue, _: bool) -> bool {
+            false
+        }
+    }
+
+    fn monitor(name: &str, crtc: u32, on: bool, x: i32) -> Monitor {
+        let crtc = smithay::reexports::drm::control::crtc::Handle::from(std::num::NonZeroU32::new(crtc).unwrap());
+        let screen = crate::screen::screen(name.into(), (1920, 1080), Box::new(Nowhere));
+        Monitor { name: name.into(), crtc: Some(crtc), connector: None, on, size: (1920, 1080), turn: 0, x, y: 0, scale: 1.0, screen, flips: Arc::new(Mutex::new(Flips::default())), mhz: 60000 }
+    }
+
+    /// The right one dark, then moved left of the other: once re-sorted, the
+    /// dark one is first, and what is read by index says so.
+    #[test]
+    fn being_off_follows_a_monitor_to_its_new_place() {
+        let mut monitors = vec![monitor("TEST-POW-A", 1, true, 0), monitor("TEST-POW-B", 2, false, 1920)];
+        ask(&ASKED_AT, "TEST-POW-B", ((-1920, 0), true));
+        place_monitors(&mut monitors);
+        publish(&monitors);
+        assert_eq!(monitors.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(), ["TEST-POW-B", "TEST-POW-A"]);
+        assert!(!crate::layers::powered(0));
+        assert!(crate::layers::powered(1));
+        ASKED_AT.lock().unwrap().retain(|(n, _)| !n.starts_with("TEST-POW"));
     }
 }
