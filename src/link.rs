@@ -38,8 +38,16 @@ fn windows() -> Result<Vec<Win>, String> {
 }
 
 /// Orders to the window manager's scene, answered in order.
-fn say(orders: &[String]) -> Vec<String> {
+/// This program's own file. Replaced while it runs (an update, a build), Linux
+/// names it «… (deleted)» and nothing can be started from that: the new one is
+/// where it was.
+pub(crate) fn own_exe() -> std::path::PathBuf {
     let me = std::env::current_exe().unwrap_or_else(|_| "pleamar-wm".into());
+    std::path::PathBuf::from(me.to_string_lossy().trim_end_matches(" (deleted)"))
+}
+
+fn say(orders: &[String]) -> Vec<String> {
+    let me = own_exe();
     let out = std::process::Command::new(me).arg("--say").arg("wm").args(orders).output();
     out.map(|o| String::from_utf8_lossy(&o.stdout).lines().map(str::to_owned).collect()).unwrap_or_default()
 }
@@ -687,7 +695,7 @@ pub(crate) fn go(args: &[String]) -> Result<String, String> {
                     }
                     // Not waited for: a process of its own waits, and types the
                     // answer into this terminal when it is there.
-                    let me_exe = std::env::current_exe().map_err(|e| e.to_string())?;
+                    let me_exe = own_exe();
                     let mut c = std::process::Command::new("setsid");
                     c.arg("-f").arg(me_exe).args(["link", "_deliver", &id.to_string(), &h.layer.to_string(), &k.to_string(), &(mine_is_a as u8).to_string(), &before.to_string(), &timeout.to_string(), &w.slot.to_string(), &HANDED.with(|c| c.get()).unwrap_or(u64::MAX).to_string(), &HANDED_AT.with(|c| c.get()).to_string()]);
                     c.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
@@ -1008,6 +1016,9 @@ fn spawn(rest: &[String]) -> Result<String, String> {
     }
     // Wired, in the first free place.
     let taken: Vec<f64> = say(&(0..8).map(|k| format!("get wire.{k}.a")).collect::<Vec<_>>()).iter().filter_map(|v| v.trim().parse().ok()).collect();
+    if taken.len() < 8 {
+        return Err("the desktop does not say which wires there are (is this pleamar-wm's session?)".into());
+    }
     let k = taken.iter().position(|a| *a < 0.0).ok_or("eight wires already: cut one first")?;
     let mut orders = vec![format!("fact wire.{k}.a {}", h.slot), format!("fact wire.{k}.b {slot}")];
     if let Some(name) = flag("--name") {
@@ -1247,6 +1258,13 @@ mod tests {
     fn what_codex_and_opencode_draw_at_the_bottom_is_no_answer() {
         assert_eq!(answer(&["  GPT-6-Luna high · ~/Proyectos/pleamar-wm", "  ← for agents · ? for shortcuts"]), "  GPT-6-Luna high · ~/Proyectos/pleamar-wm");
         assert_eq!(answer(&["   /home/abel/Proyectos/pleamar-wm                      28.3K (14%)  ctrl+p commands"]), "");
+    }
+
+    #[test]
+    fn a_program_replaced_while_it_runs_still_finds_itself() {
+        // Linux names its file «… (deleted)» once it is replaced; the new one is where it was.
+        let me = own_exe();
+        assert!(!me.to_string_lossy().ends_with("(deleted)"));
     }
 
     #[test]

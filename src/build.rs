@@ -63,7 +63,7 @@ fn materialize(dir: &str) -> Result<(), String> {
 pub fn link_pleamar() -> Option<String> {
     let bin = format!("{}/bin", dir());
     let link = format!("{bin}/pleamar");
-    let me = std::env::current_exe().ok()?;
+    let me = crate::link::own_exe();
     if std::fs::read_link(&link).ok().as_deref() != Some(me.as_path()) {
         std::fs::create_dir_all(&bin).ok()?;
         let _ = std::fs::remove_file(&link);

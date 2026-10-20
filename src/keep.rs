@@ -31,7 +31,7 @@ fn pending() -> String {
 
 /// The scene's values, by name, in order.
 fn get(names: &[String]) -> Vec<String> {
-    let me = std::env::current_exe().unwrap_or_else(|_| "pleamar-wm".into());
+    let me = crate::link::own_exe();
     let mut c = std::process::Command::new(me);
     // From inside the session's own process, where its programs find `wm`.
     if let Some(own) = windows_file().and_then(|w| std::path::Path::new(&w).parent().map(|p| p.display().to_string())) {
@@ -168,7 +168,7 @@ pub fn start(windows: String, to_render: std::sync::mpsc::Sender<pleamar::scene:
 pub fn restore(dismiss: bool) -> Result<String, String> {
     let _ = std::fs::remove_file(pending());
     let say = |orders: &[String]| {
-        let me = std::env::current_exe().unwrap_or_else(|_| "pleamar-wm".into());
+        let me = crate::link::own_exe();
         let _ = std::process::Command::new(me).arg("--say").arg("wm").args(orders).output();
     };
     say(&["fact kept.n 0".to_owned()]);
@@ -196,7 +196,7 @@ pub fn restore(dismiss: bool) -> Result<String, String> {
         // On its monitor (where the agent's hands can take it), in its place.
         let monitor = w["monitor"].as_i64().unwrap_or(0);
         if let Some(pid) = crate::link::pid_of_slot(slot) {
-            let _ = std::process::Command::new(std::env::current_exe().unwrap_or_else(|_| "pleamar-wm".into())).args(["agent", "send", &pid.to_string(), &monitor.to_string()]).output();
+            let _ = std::process::Command::new(crate::link::own_exe()).args(["agent", "send", &pid.to_string(), &monitor.to_string()]).output();
         }
         std::thread::sleep(Duration::from_millis(500));
         let p: Vec<f64> = w["place"].as_array().into_iter().flatten().filter_map(Value::as_f64).collect();
@@ -235,6 +235,6 @@ pub fn restore(dismiss: bool) -> Result<String, String> {
         wires += 1;
     }
     // (Its hands moved them: the monitor's light goes out.)
-    let _ = std::process::Command::new(std::env::current_exe().unwrap_or_else(|_| "pleamar-wm".into())).args(["agent", "done"]).output();
+    let _ = std::process::Command::new(crate::link::own_exe()).args(["agent", "done"]).output();
     Ok(format!("brought back {opened} terminals ({agents} with their agent on its last conversation) and {wires} wires"))
 }
