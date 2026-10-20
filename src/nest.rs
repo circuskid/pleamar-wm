@@ -2017,6 +2017,8 @@ impl State {
         }
         let written = match (&p.buffer, pixels) {
             (Some(buffer), Some(mut px)) if px.len() >= w * h * 4 => with_buffer_contents_mut(buffer, |ptr, len, d| {
+                // A private window is not seen in a screenshot either, as in a shared screen.
+                crate::portal::hide_private_in(p.monitor, &mut px, (w as u32, h as u32), (p.piece[0], p.piece[1]));
                 if p.pointer {
                     layers::pointer_onto_piece(p.monitor, p.piece, &mut px);
                 }

@@ -133,13 +133,19 @@ fn sharing(streams: usize) {
 
 /// The private windows on that monitor (`window app=… private`), made into
 /// big squares of their own colour: what they show cannot be read.
-fn hide_private(n: usize, pixels: &mut [u8], (w, h): (u32, u32)) {
+fn hide_private(n: usize, pixels: &mut [u8], size: (u32, u32)) {
+    hide_private_in(n, pixels, size, (0, 0));
+}
+
+/// The same in a piece of that monitor that starts at `at` (its pixels): a
+/// screenshot of a region, or what is behind a glass.
+pub(crate) fn hide_private_in(n: usize, pixels: &mut [u8], (w, h): (u32, u32), at: (i32, i32)) {
     let Some(m) = layers::monitors().get(n).cloned() else { return };
     const BLOCK: i32 = 28;
     // Its title bar too, which the scene draws over its box: a title says a lot.
     let bar = (40.0 * m.scale) as i32;
     for r in layers::private_on(&m.name) {
-        let r = [r[0] - 4, r[1] - bar, r[2] + 8, r[3] + bar + 4];
+        let r = [r[0] - 4 - at.0, r[1] - bar - at.1, r[2] + 8, r[3] + bar + 4];
         let (x0, y0) = (r[0].max(0), r[1].max(0));
         let (x1, y1) = ((r[0] + r[2]).min(w as i32), (r[1] + r[3]).min(h as i32));
         let mut by = y0;
