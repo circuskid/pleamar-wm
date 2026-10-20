@@ -9,7 +9,7 @@
 //! monitor's buffers made again, and is answered as not yet.
 
 use crate::config::ModeWish;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::mpsc;
 use std::sync::{Mutex, OnceLock};
@@ -28,6 +28,11 @@ pub struct Wish {
     pub at: Option<(i32, i32)>,
 }
 
+/// How far from 0,0 a monitor may be put, in units: far past any real
+/// desktop, and far enough from `i32::MAX` that its far edge (x plus its
+/// width) is still a number.
+const FARTHEST: i32 = 1_000_000;
+
 const USAGE: &str = "pleamar-wm output NAME [at X,Y] [vrr on|off] [mode WxH@HZ] [scale S] [transform 0|90|180|270]";
 
 impl Wish {
@@ -38,7 +43,13 @@ impl Wish {
         while k < words.len() {
             let value = words.get(k + 1).copied().ok_or_else(|| format!("'{}' needs a value: {USAGE}", words[k]))?;
             match words[k] {
-                "at" => wish.at = Some(crate::config::position(value).ok_or_else(|| format!("'{value}' is not a place: at X,Y"))?),
+                "at" => {
+                    let (x, y) = crate::config::position(value).ok_or_else(|| format!("'{value}' is not a place: at X,Y"))?;
+                    if x.unsigned_abs() > FARTHEST as u32 || y.unsigned_abs() > FARTHEST as u32 {
+                        return Err(format!("'{value}' is too far: at most {FARTHEST} units from 0,0 either way"));
+                    }
+                    wish.at = Some((x, y));
+                }
                 "vrr" => {
                     wish.vrr = Some(match value {
                         "on" | "1" => true,
@@ -98,7 +109,8 @@ pub fn vrr_change(name: &str, capable: Option<u64>, enabled: Option<u64>, on: bo
 pub fn overlapping(boxes: &[(&str, [i32; 4])]) -> Option<(String, String)> {
     for (i, (a, ra)) in boxes.iter().enumerate() {
         for (b, rb) in &boxes[i + 1..] {
-            if ra[0] < rb[0] + rb[2] && rb[0] < ra[0] + ra[2] && ra[1] < rb[1] + rb[3] && rb[1] < ra[1] + ra[3] {
+            let (a4, b4) = (ra.map(i64::from), rb.map(i64::from));
+            if a4[0] < b4[0] + b4[2] && b4[0] < a4[0] + a4[2] && a4[1] < b4[1] + b4[3] && b4[1] < a4[1] + a4[3] {
                 return Some((a.to_string(), b.to_string()));
             }
         }
@@ -155,14 +167,27 @@ pub fn serve(dir: &str) {
             }
         };
         let _ = std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o600));
-        let _ = std::thread::Builder::new().name("output".into()).spawn(move || {
-            for mut stream in listener.incoming().flatten() {
+        listen(listener);
+    });
+}
+
+/// How long a client has to say its line, and to take the answer.
+const PATIENCE: Duration = Duration::from_secs(2);
+
+/// Each connection on a thread of its own, with a deadline both ways: a
+/// client that never ends its line holds up only itself.
+fn listen(listener: UnixListener) {
+    let _ = std::thread::Builder::new().name("output".into()).spawn(move || {
+        for stream in listener.incoming().flatten() {
+            let _ = std::thread::Builder::new().name("output-asked".into()).spawn(move || {
+                let _ = stream.set_read_timeout(Some(PATIENCE));
+                let _ = stream.set_write_timeout(Some(PATIENCE));
                 let mut line = String::new();
-                if BufReader::new(&stream).read_line(&mut line).is_ok() {
-                    let _ = writeln!(stream, "{}", answer(line.trim()));
+                if BufReader::new(&stream).take(4096).read_line(&mut line).is_ok_and(|n| n > 0) {
+                    let _ = writeln!(&stream, "{}", answer(line.trim()));
                 }
-            }
-        });
+            });
+        }
     });
 }
 
@@ -219,6 +244,10 @@ mod tests {
         assert!(Wish::parse(&["vrr", "maybe"]).is_err());
         assert!(Wish::parse(&["at", "left"]).is_err());
         assert!(Wish::parse(&["brightness", "50"]).is_err());
+        // A far edge that would not fit in a number is refused before anything is kept.
+        assert!(Wish::parse(&["at", "2147483647,0"]).unwrap_err().contains("too far"));
+        assert!(Wish::parse(&["at", "0,-2147483648"]).unwrap_err().contains("too far"));
+        assert_eq!(Wish::parse(&["at", "-1000000,1000000"]).unwrap().at, Some((-1_000_000, 1_000_000)));
     }
 
     /// What needs a new mode is named, and only that.
@@ -238,6 +267,30 @@ mod tests {
         assert!(vrr_change("HEADLESS-1", None, None, true).is_err());
         // Off where it cannot be on is no error: it already is.
         assert_eq!(vrr_change("HEADLESS-1", None, None, false), Ok(None));
+    }
+
+    /// A client that connects and never ends its line does not keep the
+    /// next one from its answer.
+    #[test]
+    fn a_stalled_client_does_not_hold_up_the_next() {
+        let path = std::env::temp_dir().join(format!("pleamar-wm-output-test-{}.sock", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        listen(UnixListener::bind(&path).unwrap());
+        let mut stalled = UnixStream::connect(&path).unwrap();
+        write!(stalled, "HEADLESS-1 at 0,").unwrap();
+        let started = std::time::Instant::now();
+        let mut next = UnixStream::connect(&path).unwrap();
+        next.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+        writeln!(next, "HEADLESS-1 brightness 5").unwrap();
+        let mut reply = String::new();
+        BufReader::new(&next).read_line(&mut reply).unwrap();
+        assert!(reply.starts_with("err 'brightness'"), "{reply}");
+        assert!(started.elapsed() < PATIENCE, "answered only after {:?}", started.elapsed());
+        // And the stalled one is let go once its time is up.
+        stalled.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+        let mut rest = String::new();
+        assert_eq!(BufReader::new(&stalled).read_line(&mut rest).unwrap_or(0), 0);
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

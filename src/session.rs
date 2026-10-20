@@ -573,6 +573,17 @@ fn ask<T>(list: &Mutex<Vec<(String, T)>>, name: &str, value: T) {
     list.push((name.to_owned(), value));
 }
 
+/// Variable refresh turned now on a monitor that shows frames, or kept for
+/// its first one. The lock is held until the wish is kept: `DrmOutput::show`
+/// reads it under the same lock as it sets the mode, so a first frame that
+/// lands in between cannot miss it.
+fn vrr_now_or_when_lit(flips: &Mutex<Flips>, name: &str, on: bool, now: impl FnOnce() -> Result<String, String>) -> Result<String, String> {
+    let f = flips.lock().unwrap();
+    let done = if f.set { now()? } else { format!("{name}: variable refresh {} once it lights", if on { "on" } else { "off" }) };
+    ask(&ASKED_VRR, name, on);
+    Ok(done)
+}
+
 fn vrr_wanted(name: &str) -> bool {
     asked(&ASKED_VRR, name).unwrap_or_else(|| config::get().monitor(name).is_some_and(|r| r.vrr))
 }
@@ -876,18 +887,12 @@ impl State {
             }
         }
         // Variable refresh first: the one part the card can still refuse.
-        let lit = m.flips.lock().unwrap().set;
         let mut done = Vec::new();
         if let Some(on) = wish.vrr {
-            if lit {
-                done.push(set_vrr(&self.drm, conn, crtc, name, on)?);
-            } else {
-                if on {
-                    crate::output::vrr_change(name, property(&self.drm, conn, "vrr_capable").map(|(_, v)| v), Some(0), true)?;
-                }
-                done.push(format!("{name}: variable refresh {} once it lights", if on { "on" } else { "off" }));
+            if on && !m.flips.lock().unwrap().set {
+                crate::output::vrr_change(name, property(&self.drm, conn, "vrr_capable").map(|(_, v)| v), Some(0), true)?;
             }
-            ask(&ASKED_VRR, name, on);
+            done.push(vrr_now_or_when_lit(&m.flips, name, on, || set_vrr(&self.drm, conn, crtc, name, on))?);
         }
         if let Some(at) = wish.at {
             // The others stay where they are: placed where they were, or the
@@ -1687,7 +1692,8 @@ fn keep_ahead() {
 
 #[cfg(test)]
 mod tests {
-    use super::{sdr_value, turned_point};
+    use super::{asked, sdr_value, turned_point, vrr_now_or_when_lit, vrr_wanted, Flips, ASKED_VRR};
+    use std::sync::{Arc, Mutex};
 
     /// `transform` goes the way wlroots' and Hyprland's does, anticlockwise: with
     /// 1, what is at the top left of the upright monitor is at the bottom left of
@@ -1732,5 +1738,45 @@ mod tests {
         let odd: Vec<(u64, String)> = vec![(9, "BT2020_RGB".to_owned())];
         assert_eq!(sdr_value("Colorspace", 9, &odd), None);
         assert_eq!(sdr_value("max bpc", 12, &[]), None);
+    }
+
+    /// A wish for a monitor not lit yet is kept for its first frame, and one
+    /// for a lit monitor is done now and kept for the next time it is set.
+    #[test]
+    fn vrr_waits_for_the_first_frame_or_is_done() {
+        let flips: Mutex<Flips> = Default::default();
+        assert_eq!(vrr_now_or_when_lit(&flips, "TEST-A", true, || panic!("not lit: nothing to write")), Ok("TEST-A: variable refresh on once it lights".to_owned()));
+        assert_eq!(asked(&ASKED_VRR, "TEST-A"), Some(true));
+        flips.lock().unwrap().set = true;
+        assert_eq!(vrr_now_or_when_lit(&flips, "TEST-A", false, || Ok("written".to_owned())), Ok("written".to_owned()));
+        assert!(!vrr_wanted("TEST-A"));
+        // Refused by the card: not kept.
+        assert!(vrr_now_or_when_lit(&flips, "TEST-A", true, || Err("refused".to_owned())).is_err());
+        assert_eq!(asked(&ASKED_VRR, "TEST-A"), Some(false));
+    }
+
+    /// The first frame, as `DrmOutput::show` takes it (the lock, `set`, then
+    /// the wish), racing a wish for that monitor: whichever goes first, the
+    /// wish is either written by the wish's side or read by the frame's.
+    #[test]
+    fn a_first_frame_racing_a_wish_does_not_lose_it() {
+        for k in 0..200 {
+            let name = format!("TEST-RACE-{k}");
+            let flips: Arc<Mutex<Flips>> = Default::default();
+            let (f2, n2) = (flips.clone(), name.clone());
+            let frame = std::thread::spawn(move || {
+                let mut f = f2.lock().unwrap();
+                f.set = true;
+                vrr_wanted(&n2)
+            });
+            let written = std::sync::atomic::AtomicBool::new(false);
+            vrr_now_or_when_lit(&flips, &name, true, || {
+                written.store(true, std::sync::atomic::Ordering::Relaxed);
+                Ok(String::new())
+            })
+            .unwrap();
+            let read_at_first_frame = frame.join().unwrap();
+            assert!(written.into_inner() || read_at_first_frame, "{name}: the wish was neither written nor read");
+        }
     }
 }
