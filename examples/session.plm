@@ -11722,6 +11722,14 @@ scene Session {
             g.w = fw.$i
             g.h = fh.$i
         }
+        // Taken by an edge with the camera far away: it comes close first
+        // (as Super and the wheel would, all the way in), the point taken
+        // staying under the pointer. Resized from far away it was made huge
+        // on the plane while what it showed was a tenth of its size.
+        on press left_edge.$i while C and cz < 0.95 { cvw.k = sc; cvw.d = 100; cvw.x = mouse.x; cvw.y = mouse.y; cvw.n = cvw.n + 1 }
+        on press right_edge.$i while C and cz < 0.95 { cvw.k = sc; cvw.d = 100; cvw.x = mouse.x; cvw.y = mouse.y; cvw.n = cvw.n + 1 }
+        on press bottom_edge.$i while C and cz < 0.95 { cvw.k = sc; cvw.d = 100; cvw.x = mouse.x; cvw.y = mouse.y; cvw.n = cvw.n + 1 }
+        on press corner.$i while C and cz < 0.95 { cvw.k = sc; cvw.d = 100; cvw.x = mouse.x; cvw.y = mouse.y; cvw.n = cvw.n + 1 }
         on release left_edge.$i {
             sizing = -1
             sedge = -1
