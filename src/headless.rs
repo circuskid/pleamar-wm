@@ -59,13 +59,16 @@ fn apply_output(name: &str, wish: &crate::output::Wish) -> Result<String, String
         done.push(format!("{name}: variable refresh off"));
     }
     if let Some(at) = wish.at {
+        // Gone between the check above and here: nothing is kept for it.
+        if !crate::layers::place(name, at) {
+            return Err(format!("{name} is gone"));
+        }
         let m = name.strip_prefix("HEADLESS-").and_then(|n| n.parse::<usize>().ok()).map(|n| n - 1);
         if let Some(m) = m {
             let mut asked = ASKED_AT.lock().unwrap();
             asked.retain(|(k, _)| *k != m);
             asked.push((m, at));
         }
-        crate::layers::place(name, at);
         crate::layers::tell(crate::layers::ToLayers::Monitors);
         done.push(format!("{name} at {},{}", at.0, at.1));
     }

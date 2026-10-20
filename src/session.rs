@@ -192,8 +192,10 @@ impl Output for DrmOutput {
                     if sdr.is_err() {
                         sdr = set_sdr(&self.drm, self.connector, &self.name);
                     }
-                    if vrr_wanted(&self.name) {
-                        let _ = set_vrr(&self.drm, self.connector, self.crtc, &self.name, true);
+                    // Written either way when it is said: a CRTC keeps
+                    // VRR_ENABLED from whoever drove it last.
+                    if let Some(on) = vrr_at_first_frame(asked(&ASKED_VRR, &self.name), config::get().monitor(&self.name).map(|r| r.vrr)) {
+                        let _ = set_vrr(&self.drm, self.connector, self.crtc, &self.name, on);
                     }
                 }
                 Err(e) => eprintln!("session · {}: the monitor did not take its first frame: {e}", self.name),
@@ -561,7 +563,55 @@ fn set_vrr(drm: &DrmDeviceFd, conn: connector::Handle, crtc: crtc::Handle, name:
 /// outranks the monitor's line in session.conf until the session ends, and
 /// holds for a monitor plugged in again.
 static ASKED_VRR: Mutex<Vec<(String, bool)>> = Mutex::new(Vec::new());
-static ASKED_AT: Mutex<Vec<(String, (i32, i32))>> = Mutex::new(Vec::new());
+/// Where, and whether `pleamar-wm output` asked it (true) or it was kept
+/// where it was when another one moved (false).
+static ASKED_AT: Mutex<Vec<(String, ((i32, i32), bool))>> = Mutex::new(Vec::new());
+
+/// How firmly a monitor is held where it is, firmest first: when two would
+/// cover the same part of the desktop, the looser one joins the row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Pin {
+    Asked,
+    Configured,
+    Kept,
+}
+
+/// Each monitor's place, from its size in units and where it is held, if
+/// anywhere: held ones where they are held unless a firmer one is there
+/// already; the rest left to right at the top, after the right edge of
+/// the held ones.
+fn place_row(items: &[((i32, i32), Option<((i32, i32), Pin)>)]) -> Vec<(i32, i32)> {
+    let mut held: Vec<usize> = (0..items.len()).filter(|k| items[*k].1.is_some()).collect();
+    held.sort_by_key(|k| items[*k].1.map(|(_, pin)| pin));
+    let mut out: Vec<Option<(i32, i32)>> = vec![None; items.len()];
+    let mut taken: Vec<[i32; 4]> = Vec::new();
+    for k in held {
+        let ((w, h), Some(((x, y), _))) = items[k] else { continue };
+        let b = [x, y, w, h];
+        if taken.iter().any(|t| crate::output::overlapping(&[("", *t), ("", b)]).is_some()) {
+            continue;
+        }
+        taken.push(b);
+        out[k] = Some((x, y));
+    }
+    let mut x = taken.iter().map(|t| t[0] + t[2]).max().unwrap_or(0);
+    items
+        .iter()
+        .zip(out)
+        .map(|(((w, _), _), at)| {
+            at.unwrap_or_else(|| {
+                x += w;
+                (x - w, 0)
+            })
+        })
+        .collect()
+}
+
+/// A place kept for a monitor only because another moved goes with it:
+/// plugged in again, it joins the row. One asked for stays.
+fn forget_kept(present: &[&str]) {
+    ASKED_AT.lock().unwrap().retain(|(n, (_, asked))| *asked || present.contains(&n.as_str()));
+}
 
 fn asked<T: Copy>(list: &Mutex<Vec<(String, T)>>, name: &str) -> Option<T> {
     list.lock().unwrap().iter().find(|(n, _)| n == name).map(|(_, v)| *v)
@@ -584,8 +634,11 @@ fn vrr_now_or_when_lit(flips: &Mutex<Flips>, name: &str, on: bool, now: impl FnO
     Ok(done)
 }
 
-fn vrr_wanted(name: &str) -> bool {
-    asked(&ASKED_VRR, name).unwrap_or_else(|| config::get().monitor(name).is_some_and(|r| r.vrr))
+/// What variable refresh is set to at a monitor's first frame: what was
+/// asked, or else its monitor line's (with no `vrr`, off); with neither,
+/// the CRTC is left as it is.
+fn vrr_at_first_frame(asked: Option<bool>, line: Option<bool>) -> Option<bool> {
+    asked.or(line)
 }
 
 /// The monitor told the frames are what they are, SDR in sRGB: pleamar-wm
@@ -726,17 +779,22 @@ fn place_monitors(monitors: &mut [Monitor]) {
         let names: Vec<&str> = order.split(',').map(str::trim).collect();
         monitors.sort_by_key(|m| names.iter().position(|n| *n == m.name).unwrap_or(names.len()));
     }
-    let placed: Vec<Option<(i32, i32)>> = monitors.iter().map(|m| asked(&ASKED_AT, &m.name).or_else(|| config::get().monitor(&m.name).and_then(|r| r.at))).collect();
-    let mut x = monitors.iter().zip(&placed).filter_map(|(m, p)| p.map(|(px, _)| px + m.units().0)).max().unwrap_or(0);
-    for (m, p) in monitors.iter_mut().zip(&placed) {
-        (m.x, m.y) = match p {
-            Some(at) => *at,
-            None => {
-                let at = (x, 0);
-                x += m.units().0;
-                at
-            }
-        };
+    forget_kept(&monitors.iter().map(|m| m.name.as_str()).collect::<Vec<_>>());
+    let items: Vec<((i32, i32), Option<((i32, i32), Pin)>)> = monitors
+        .iter()
+        .map(|m| {
+            let pin = match asked(&ASKED_AT, &m.name) {
+                Some((at, true)) => Some((at, Pin::Asked)),
+                kept => config::get().monitor(&m.name).and_then(|r| r.at).map(|at| (at, Pin::Configured)).or(kept.map(|(at, _)| (at, Pin::Kept))),
+            };
+            (m.units(), pin)
+        })
+        .collect();
+    for ((m, (_, pin)), at) in monitors.iter_mut().zip(&items).zip(place_row(&items)) {
+        if pin.is_some_and(|(p, _)| p != at) {
+            println!("session · {}: its place is taken, so it joins the row", m.name);
+        }
+        (m.x, m.y) = at;
     }
     monitors.sort_by_key(|m| (m.x, m.y));
     let right = monitors.iter().map(|m| m.x + m.units().0).max().unwrap_or(0);
@@ -899,10 +957,10 @@ impl State {
             // row left to right would close up around the one moved.
             for o in self.monitors.iter().filter(|o| o.crtc.is_some() && o.name != name) {
                 if asked(&ASKED_AT, &o.name).is_none() && config::get().monitor(&o.name).and_then(|r| r.at).is_none() {
-                    ask(&ASKED_AT, &o.name, (o.x, o.y));
+                    ask(&ASKED_AT, &o.name, ((o.x, o.y), false));
                 }
             }
-            ask(&ASKED_AT, name, at);
+            ask(&ASKED_AT, name, (at, true));
             self.monitors_changed();
             done.push(format!("{name} at {},{}", at.0, at.1));
         }
@@ -1692,7 +1750,7 @@ fn keep_ahead() {
 
 #[cfg(test)]
 mod tests {
-    use super::{asked, sdr_value, turned_point, vrr_now_or_when_lit, vrr_wanted, Flips, ASKED_VRR};
+    use super::{ask, asked, forget_kept, place_row, sdr_value, turned_point, vrr_at_first_frame, vrr_now_or_when_lit, Flips, Pin, ASKED_AT, ASKED_VRR};
     use std::sync::{Arc, Mutex};
 
     /// `transform` goes the way wlroots' and Hyprland's does, anticlockwise: with
@@ -1749,7 +1807,7 @@ mod tests {
         assert_eq!(asked(&ASKED_VRR, "TEST-A"), Some(true));
         flips.lock().unwrap().set = true;
         assert_eq!(vrr_now_or_when_lit(&flips, "TEST-A", false, || Ok("written".to_owned())), Ok("written".to_owned()));
-        assert!(!vrr_wanted("TEST-A"));
+        assert_eq!(asked(&ASKED_VRR, "TEST-A"), Some(false));
         // Refused by the card: not kept.
         assert!(vrr_now_or_when_lit(&flips, "TEST-A", true, || Err("refused".to_owned())).is_err());
         assert_eq!(asked(&ASKED_VRR, "TEST-A"), Some(false));
@@ -1767,7 +1825,7 @@ mod tests {
             let frame = std::thread::spawn(move || {
                 let mut f = f2.lock().unwrap();
                 f.set = true;
-                vrr_wanted(&n2)
+                asked(&ASKED_VRR, &n2) == Some(true)
             });
             let written = std::sync::atomic::AtomicBool::new(false);
             vrr_now_or_when_lit(&flips, &name, true, || {
@@ -1778,5 +1836,42 @@ mod tests {
             let read_at_first_frame = frame.join().unwrap();
             assert!(written.into_inner() || read_at_first_frame, "{name}: the wish was neither written nor read");
         }
+    }
+
+    /// Off is written at the first frame too, asked or on the monitor's
+    /// line: a CRTC lit with VRR before keeps VRR_ENABLED at 1 otherwise.
+    #[test]
+    fn vrr_off_is_written_at_the_first_frame() {
+        assert_eq!(vrr_at_first_frame(Some(false), Some(true)), Some(false));
+        assert_eq!(vrr_at_first_frame(None, Some(false)), Some(false));
+        assert_eq!(vrr_at_first_frame(Some(true), None), Some(true));
+        assert_eq!(vrr_at_first_frame(None, None), None);
+        // And what that writes on a CRTC left at 1 by whoever was before.
+        assert_eq!(crate::output::vrr_change("DP-3", Some(1), Some(1), false), Ok(Some(0)));
+        assert_eq!(crate::output::vrr_change("DP-3", None, Some(1), false), Ok(Some(0)));
+    }
+
+    /// Two held on the same place: the firmer stays, the other joins the row
+    /// after the held ones, never on top.
+    #[test]
+    fn a_place_already_taken_joins_the_row() {
+        let w = (1920, 1080);
+        let at = |x, y, pin| Some(((x, y), pin));
+        assert_eq!(place_row(&[(w, None), (w, None)]), vec![(0, 0), (1920, 0)]);
+        assert_eq!(place_row(&[(w, at(0, 0, Pin::Kept)), (w, at(0, 0, Pin::Asked))]), vec![(1920, 0), (0, 0)]);
+        assert_eq!(place_row(&[(w, at(0, 0, Pin::Configured)), (w, at(500, 0, Pin::Kept)), (w, None)]), vec![(0, 0), (1920, 0), (3840, 0)]);
+        assert_eq!(place_row(&[(w, at(0, 1080, Pin::Asked)), (w, None)]), vec![(0, 1080), (1920, 0)]);
+    }
+
+    /// B kept where it was when A moved, B unplugged: plugged in again it is
+    /// placed as any new one; A's asked place stays.
+    #[test]
+    fn a_kept_place_goes_with_its_monitor() {
+        ask(&ASKED_AT, "TEST-PIN-A", ((0, 1080), true));
+        ask(&ASKED_AT, "TEST-PIN-B", ((0, 0), false));
+        forget_kept(&["TEST-PIN-A"]);
+        assert_eq!(asked(&ASKED_AT, "TEST-PIN-B"), None);
+        forget_kept(&[]);
+        assert_eq!(asked(&ASKED_AT, "TEST-PIN-A"), Some(((0, 1080), true)));
     }
 }

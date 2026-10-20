@@ -174,6 +174,24 @@ pub fn serve(dir: &str) {
 /// How long a client has to say its line, and to take the answer.
 const PATIENCE: Duration = Duration::from_secs(2);
 
+/// The longest line asked, its end included; anything longer is refused
+/// whole, not cut and done.
+const LONGEST: usize = 4096;
+
+/// One line from a client: the line, or what to answer instead; None when
+/// it said nothing in time.
+fn read_asked(stream: &UnixStream) -> Option<Result<String, String>> {
+    let mut line = Vec::new();
+    let n = BufReader::new(stream).take(LONGEST as u64 + 1).read_until(b'\n', &mut line).ok()?;
+    if n == 0 {
+        return None;
+    }
+    if n > LONGEST {
+        return Some(Err(format!("err line too long: at most {LONGEST} bytes")));
+    }
+    Some(String::from_utf8(line).map_err(|_| "err the line is not text".to_string()))
+}
+
 /// Each connection on a thread of its own, with a deadline both ways: a
 /// client that never ends its line holds up only itself.
 fn listen(listener: UnixListener) {
@@ -182,14 +200,19 @@ fn listen(listener: UnixListener) {
             let _ = std::thread::Builder::new().name("output-asked".into()).spawn(move || {
                 let _ = stream.set_read_timeout(Some(PATIENCE));
                 let _ = stream.set_write_timeout(Some(PATIENCE));
-                let mut line = String::new();
-                if BufReader::new(&stream).take(4096).read_line(&mut line).is_ok_and(|n| n > 0) {
-                    let _ = writeln!(&stream, "{}", answer(line.trim()));
-                }
+                let reply = match read_asked(&stream) {
+                    Some(Ok(line)) => answer(line.trim()),
+                    Some(Err(refused)) => refused,
+                    None => return,
+                };
+                let _ = writeln!(&stream, "{reply}");
             });
         }
     });
 }
+
+/// How long `pleamar-wm output` waits for the session.
+const CLIENT_PATIENCE: Duration = Duration::from_secs(10);
 
 /// `pleamar-wm output NAME …` from a shell: the answer printed, 0 if done.
 pub fn cli(args: &[String]) -> i32 {
@@ -202,6 +225,10 @@ pub fn cli(args: &[String]) -> i32 {
         return 1;
     };
     let reply = UnixStream::connect(format!("{dir}/output.sock")).and_then(|mut s| {
+        // Longer than the session waits on its loop, so its own "busy"
+        // answer comes first; a session that stopped answering is given up on.
+        s.set_read_timeout(Some(CLIENT_PATIENCE))?;
+        s.set_write_timeout(Some(CLIENT_PATIENCE))?;
         writeln!(s, "{}", args.join(" "))?;
         let mut reply = String::new();
         BufReader::new(&s).read_line(&mut reply)?;
@@ -290,6 +317,30 @@ mod tests {
         stalled.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
         let mut rest = String::new();
         assert_eq!(BufReader::new(&stalled).read_line(&mut rest).unwrap_or(0), 0);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// A line longer than the limit is refused, not cut and acted on.
+    #[test]
+    fn a_line_too_long_is_refused() {
+        let path = std::env::temp_dir().join(format!("pleamar-wm-output-long-{}.sock", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        listen(UnixListener::bind(&path).unwrap());
+        let ask = |line: &str| {
+            let mut s = UnixStream::connect(&path).unwrap();
+            s.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+            s.write_all(line.as_bytes()).unwrap();
+            let mut reply = String::new();
+            BufReader::new(&s).read_line(&mut reply).unwrap();
+            reply
+        };
+        // Cut at the limit, this would read "HEADLESS-1 brightness 5" and
+        // be answered as that.
+        let long = format!("HEADLESS-1 brightness 5{}x\n", " ".repeat(LONGEST));
+        assert!(ask(&long).starts_with("err line too long"));
+        let fits = format!("HEADLESS-1 brightness 5{}\n", " ".repeat(LONGEST - 24));
+        assert_eq!(fits.len(), LONGEST);
+        assert!(ask(&fits).starts_with("err 'brightness'"));
         let _ = std::fs::remove_file(&path);
     }
 
