@@ -180,15 +180,26 @@ impl Output for DrmOutput {
         }
         let fb = self.buffers[which].fb;
         if !f.set {
+            // Before the mode is set, but not with it: each property written
+            // is a commit of its own (see `set_sdr`), and only one that
+            // differs is written. One the driver refused gets one more go
+            // once the connector has its CRTC and mode.
+            let mut sdr = set_sdr(&self.drm, self.connector, &self.name);
             match self.drm.set_crtc(self.crtc, Some(fb), (0, 0), &[self.connector], Some(self.mode)) {
                 Ok(()) => {
                     f.set = true;
                     f.on_screen = Some(which);
+                    if sdr.is_err() {
+                        sdr = set_sdr(&self.drm, self.connector, &self.name);
+                    }
                     if config::get().monitor(&self.name).is_some_and(|r| r.vrr) {
                         set_vrr(&self.drm, self.connector, self.crtc, &self.name);
                     }
                 }
                 Err(e) => eprintln!("session · {}: the monitor did not take its first frame: {e}", self.name),
+            }
+            if let Err(e) = sdr {
+                eprintln!("session · {}: {e}: the colours may be off", self.name);
             }
             false
         } else {
@@ -519,6 +530,50 @@ fn set_vrr(drm: &DrmDeviceFd, conn: connector::Handle, crtc: crtc::Handle, name:
         Some(Ok(())) => println!("session · {name}: variable refresh on"),
         _ => eprintln!("session · {name}: variable refresh could not be turned on"),
     }
+}
+
+/// The monitor told the frames are what they are, SDR in sRGB: pleamar-wm
+/// never says otherwise, but the connector keeps what the last DRM master
+/// to drive it set (a session in wide colour or HDR, a game), and a TV told
+/// BT.2020 shows these colours as if they were.
+///
+/// Each property is read first and written only if it differs, so a
+/// connector already at SDR costs no commit. On an atomic driver each
+/// legacy `set_property` is an atomic commit of its own, with modesets
+/// allowed (`set_property_atomic` in the kernel's `drm_mode_object.c`); a
+/// driver that treats the change as a modeset (i915, amdgpu) does one.
+/// What the driver refused comes back as the error, for the caller to say.
+fn set_sdr(drm: &DrmDeviceFd, conn: connector::Handle, name: &str) -> Result<(), String> {
+    let mut refused = Vec::new();
+    for prop in ["Colorspace", "HDR_OUTPUT_METADATA"] {
+        let Some((h, now)) = property(drm, conn, prop) else { continue };
+        let enums: Vec<(u64, String)> = match drm.get_property(h).map(|p| p.value_type()) {
+            Ok(smithay::reexports::drm::control::property::ValueType::Enum(e)) => {
+                let (_, list) = e.values();
+                list.iter().map(|v| (v.value(), v.name().to_string_lossy().into_owned())).collect()
+            }
+            _ => Vec::new(),
+        };
+        let Some(sdr) = sdr_value(prop, now, &enums) else { continue };
+        match drm.set_property(conn, h, sdr) {
+            Ok(()) => println!("session · {name}: {prop} {now} → {sdr} (SDR)"),
+            Err(e) => refused.push(format!("{prop} {now} → {sdr} refused by the driver ({e})")),
+        }
+    }
+    if refused.is_empty() { Ok(()) } else { Err(refused.join("; ")) }
+}
+
+/// What a connector's property has to be for SDR, if it is not already:
+/// `Colorspace` its `Default` (by name: its number is the driver's), and no
+/// `HDR_OUTPUT_METADATA` blob at all, as KWin and wlroots leave it outside
+/// HDR (Hyprland instead attaches an all-zero, EOTF 0 blob).
+fn sdr_value(prop: &str, now: u64, enums: &[(u64, String)]) -> Option<u64> {
+    let sdr = match prop {
+        "Colorspace" => enums.iter().find(|(_, n)| n == "Default")?.0,
+        "HDR_OUTPUT_METADATA" => 0,
+        _ => return None,
+    };
+    (now != sdr).then_some(sdr)
 }
 
 /// The mode asked for, among the ones the monitor has: that size at the
@@ -1530,7 +1585,7 @@ fn keep_ahead() {
 
 #[cfg(test)]
 mod tests {
-    use super::turned_point;
+    use super::{sdr_value, turned_point};
 
     /// `transform` goes the way wlroots' and Hyprland's does, anticlockwise: with
     /// 1, what is at the top left of the upright monitor is at the bottom left of
@@ -1556,5 +1611,24 @@ mod tests {
         assert_eq!(turned_point(3, there, (h, w)), p);
         let there = turned_point(3, p, (w, h));
         assert_eq!(turned_point(1, there, (h, w)), p);
+    }
+
+    /// What nvidia-drm left on an HDMI TV after Hyprland: BT2020_RGB and a
+    /// metadata blob. Both go back; what is already SDR is not written again.
+    #[test]
+    fn sdr_resets_what_was_left() {
+        let colorspace: Vec<(u64, String)> = [(0, "Default"), (9, "BT2020_RGB"), (10, "BT2020_YCC")].map(|(v, n)| (v, n.to_owned())).to_vec();
+        assert_eq!(sdr_value("Colorspace", 9, &colorspace), Some(0));
+        assert_eq!(sdr_value("Colorspace", 0, &colorspace), None);
+        assert_eq!(sdr_value("HDR_OUTPUT_METADATA", 1234, &[]), Some(0));
+        assert_eq!(sdr_value("HDR_OUTPUT_METADATA", 0, &[]), None);
+    }
+
+    /// A `Colorspace` with no `Default` is left alone, not given a guess.
+    #[test]
+    fn sdr_guesses_nothing() {
+        let odd: Vec<(u64, String)> = vec![(9, "BT2020_RGB".to_owned())];
+        assert_eq!(sdr_value("Colorspace", 9, &odd), None);
+        assert_eq!(sdr_value("max bpc", 12, &[]), None);
     }
 }
