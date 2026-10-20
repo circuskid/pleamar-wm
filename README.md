@@ -83,7 +83,7 @@ the open windows without closing anything.
   no edges, seen through a camera, as an infinite whiteboard of windows. Super
   and a drag on the empty plane to move about, Super and the wheel (over the plane
   or a window) to come closer or go further right where the pointer is, `Super+0`
-  to see them all. Each program keeps its own size and is shown smaller when
+  to see them all, and Super and a double click on a window brings it to the middle. Each program keeps its own size and is shown smaller when
   the camera is further away; let a window go near another one's edge and it
   takes its side, or against the monitor's edge and it takes that half or
   quarter of what is seen. `Super+W` as ever; also the last tile of the
