@@ -11730,21 +11730,42 @@ scene Session {
         on press right_edge.$i while C and cz < 0.95 { cvw.k = sc; cvw.d = 100; cvw.x = mouse.x; cvw.y = mouse.y; cvw.n = cvw.n + 1 }
         on press bottom_edge.$i while C and cz < 0.95 { cvw.k = sc; cvw.d = 100; cvw.x = mouse.x; cvw.y = mouse.y; cvw.n = cvw.n + 1 }
         on press corner.$i while C and cz < 0.95 { cvw.k = sc; cvw.d = 100; cvw.x = mouse.x; cvw.y = mouse.y; cvw.n = cvw.n + 1 }
+        // Let go of an edge: the camera comes to the window, whole and in the
+        // middle (as close as it fits, never closer than as it is).
+        on change cvc.n while cvc.w == i and C and fr and not maxed.$i and not win.$i.minimized {
+            cvf.only = i
+            cvf.k = sc
+            cvf.l = 1000000
+            cvf.t = 1000000
+            cvf.r = -1000000
+            cvf.b = -1000000
+            cvf.n = cvf.n + 1
+            cvf.go: 0 ~0ms
+            cvf.go: 1 after 16ms
+        }
         on release left_edge.$i {
             sizing = -1
             sedge = -1
+            cvc.w = i
+            cvc.n = cvc.n + 1
         }
         on release right_edge.$i {
             sizing = -1
             sedge = -1
+            cvc.w = i
+            cvc.n = cvc.n + 1
         }
         on release bottom_edge.$i {
             sizing = -1
             sedge = -1
+            cvc.w = i
+            cvc.n = cvc.n + 1
         }
         on release corner.$i {
             sizing = -1
             sedge = -1
+            cvc.w = i
+            cvc.n = cvc.n + 1
         }
         // Only the edge pressed: another one brought under the point pressed
         // —a canvas's camera moved with Super— took the drag, and stretched
@@ -11925,7 +11946,7 @@ scene Session {
             cvy.3 = if(sc == 3, fy.$i + fh.$i / 2 - y0 - ah / 2 / cz, cvy.3)
         }
         // Super+0: its box, for the camera to take them all in.
-        on change cvf.n while cvf.k == sc and C and fr and win.$i.open and not win.$i.minimized and ws.here {
+        on change cvf.n while cvf.k == sc and (cvf.only < 0 or cvf.only == i) and C and fr and win.$i.open and not win.$i.minimized and ws.here {
             cvf.l = min(cvf.l, fx.$i)
             cvf.t = min(cvf.t, fy.$i)
             cvf.r = max(cvf.r, fx.$i + fw.$i)
@@ -13043,12 +13064,18 @@ scene Session {
     event canvas_fit
     fact cvf.k = -1
     fact cvf.n = 0
+    // -1: the camera takes in all of its windows; a number: only that one (`cvc`).
+    fact cvf.only = -1
+    // One window centred: it is asked here, and the camera goes as for all of them.
+    fact cvc.w = -1
+    fact cvc.n = 0
     fact cvf.l = 0
     fact cvf.t = 0
     fact cvf.r = 0
     fact cvf.b = 0
     prop cvf.go = 0 ~0ms
     on canvas_fit while pick(mon, cv.0, cv.1, cv.2, cv.3) > 0.5 and pick(mon, free.0, free.1, free.2, free.3) > 0.5 {
+        cvf.only = -1
         cvf.k = mon
         cvf.l = 1000000
         cvf.t = 1000000
