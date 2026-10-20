@@ -643,6 +643,8 @@ pub(crate) fn go(args: &[String]) -> Result<String, String> {
                     let before = read(id, 2000).lines().count();
                     HANDED.with(|c| c.set(Some(hooked_answer(id).0)));
                     HANDED_AT.with(|c| c.set(now_ms()));
+                    // A task handed there before this one is not brought back by itself.
+                    let _ = std::fs::write(format!("{}/{id}.handed", crate::term::socket_dir()), HANDED_AT.with(|c| c.get()).to_string());
                     // The drop runs along the wire, towards it, while it works.
                     flow(k, if mine_is_a { 1 } else { -1 });
                     // A line that says what this is, as a paste of its own (a long
@@ -721,8 +723,11 @@ pub(crate) fn go(args: &[String]) -> Result<String, String> {
                 }
             };
             back(k, mine_is_a);
-            // Already brought by `wait`: not typed a second time.
-            if taken_since(id, HANDED_AT.with(|h| h.get())) {
+            // Already brought by `wait`, or another task handed there since (whose
+            // answer is the one the agent's record ends with): not typed in.
+            let at = HANDED_AT.with(|h| h.get());
+            let later = std::fs::read_to_string(format!("{}/{id}.handed", crate::term::socket_dir())).ok().and_then(|t| t.trim().parse::<u64>().ok()).is_some_and(|t| t > at);
+            if taken_since(id, at) || later {
                 return Ok(String::new());
             }
             let answer = since(id, before);
@@ -1034,13 +1039,21 @@ fn spawn(rest: &[String]) -> Result<String, String> {
 /// Into the asking agent's terminal, once it is free —not over its person
 /// typing, nor into the middle of its own work—: a line, the text, Enter.
 fn tell(mine: i32, head: &str, text: &str) -> Result<(), String> {
-    // Claude Code takes what is typed while it works, and reads it between two
-    // steps: there it only waits for its box to be empty (its person is not
-    // writing in it). Any other, until it is done.
+    // Claude Code, Codex and opencode take what is typed while they work, and
+    // read it between two steps: there it only waits for its person not to be
+    // in the middle of writing (and, in Claude Code's, for its box to be
+    // empty). Any other agent, until it is done.
     let start = Instant::now();
     while start.elapsed() < Duration::from_secs(3600) {
         let i = info(mine);
-        if i.is_empty() || at_rest(&i) || (i.get("agent").map(String::as_str) == Some("claude") && claude_box_empty(&read(mine, 12))) {
+        let agent = i.get("agent").map(String::as_str).unwrap_or("");
+        let free = i.get("draft").map(String::as_str) != Some("1");
+        let queues = match agent {
+            "claude" => free && claude_box_empty(&read(mine, 12)),
+            "codex" | "opencode" => free,
+            _ => false,
+        };
+        if i.is_empty() || at_rest(&i) || queues {
             break;
         }
         std::thread::sleep(Duration::from_millis(700));

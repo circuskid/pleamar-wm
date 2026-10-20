@@ -238,11 +238,43 @@ struct Shared {
     shell: libc::pid_t,
     // When something last came out, in ms since the start.
     last_out: std::sync::atomic::AtomicU64,
+    // The person has typed something they have not sent yet (see `drafting`).
+    draft: std::sync::atomic::AtomicBool,
     // What the agent's hooks said (`link hook`): how it is, and its answers
     // (how many, and the last one, exactly as it gave it).
     hook: Mutex<String>,
     answers: Mutex<(u64, String)>,
     started: std::time::Instant,
+}
+
+/// Whether the person is in the middle of writing something, after these keys:
+/// a letter (or a paste) starts it; Enter, Ctrl+C or Ctrl+U ends it. Escape
+/// sequences —arrows, the mouse, the window taking the focus— are not writing.
+fn drafting(mut draft: bool, keys: &[u8]) -> bool {
+    let mut k = 0;
+    while k < keys.len() {
+        match keys[k] {
+            b'\r' | b'\n' | 0x03 | 0x15 => draft = false,
+            0x1b => {
+                // CSI (`ESC [` … a final byte) or SS3 (`ESC O` and one more), skipped;
+                // a paste's own text, between its brackets, is still writing.
+                match keys.get(k + 1) {
+                    Some(b'[') => {
+                        k += 2;
+                        while k < keys.len() && !(0x40..=0x7e).contains(&keys[k]) {
+                            k += 1;
+                        }
+                    }
+                    Some(b'O') => k += 2,
+                    _ => {}
+                }
+            }
+            c if c >= 0x20 && c != 0x7f => draft = true,
+            _ => {}
+        }
+        k += 1;
+    }
+    draft
 }
 
 fn size_of(fd: RawFd) -> libc::winsize {
@@ -320,6 +352,7 @@ fn layer(real: &str, args: &[std::ffi::OsString]) -> Result<(), String> {
             master,
             shell: child,
             last_out: std::sync::atomic::AtomicU64::new(0),
+            draft: std::sync::atomic::AtomicBool::new(false),
             hook: Mutex::new(String::new()),
             answers: Mutex::new((0, String::new())),
             started: std::time::Instant::now(),
@@ -335,6 +368,8 @@ fn layer(real: &str, args: &[std::ffi::OsString]) -> Result<(), String> {
                     match keyboard.read(&mut buf) {
                         Ok(0) | Err(_) => break,
                         Ok(n) => {
+                            let was = s.draft.load(std::sync::atomic::Ordering::Relaxed);
+                            s.draft.store(drafting(was, &buf[..n]), std::sync::atomic::Ordering::Relaxed);
                             let _g = s.input.lock();
                             write_all(s.master, &buf[..n]);
                         }
@@ -589,7 +624,7 @@ fn answer(s: &Shared, mut c: std::os::unix::net::UnixStream) {
             let (pid, cmd, cwd) = foreground(s);
             let quiet = s.started.elapsed().as_millis() as u64 - s.last_out.load(std::sync::atomic::Ordering::Relaxed);
             format!(
-                "layer {}\nterminal {}\nshell {}\nforeground {pid}\ncommand {cmd}\ncwd {cwd}\nagent {}\ntitle {title}\nstate {}\nsize {cols}x{rows}\nfullscreen {}\nbells {bells}\nquiet {quiet}\nhook {}\nanswers {}\n",
+                "layer {}\nterminal {}\nshell {}\nforeground {pid}\ncommand {cmd}\ncwd {cwd}\nagent {}\ntitle {title}\nstate {}\nsize {cols}x{rows}\nfullscreen {}\nbells {bells}\nquiet {quiet}\nhook {}\nanswers {}\ndraft {}\n",
                 // SAFETY: plain questions about this process.
                 unsafe { libc::getpid() },
                 unsafe { libc::getppid() },
@@ -600,6 +635,7 @@ fn answer(s: &Shared, mut c: std::os::unix::net::UnixStream) {
                 // (Only while the agent its hooks spoke for still runs.)
                 if agent_of(&cmd).is_some() { s.hook.lock().map(|h| h.clone()).unwrap_or_default() } else { String::new() },
                 s.answers.lock().map(|a| a.0).unwrap_or(0),
+                s.draft.load(std::sync::atomic::Ordering::Relaxed) as u8,
             )
         }
         "read" => {
@@ -926,6 +962,18 @@ fn print_reply(r: Result<String, String>) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn writing_is_letters_until_enter_and_never_escapes() {
+        assert!(drafting(false, b"hel"));
+        assert!(!drafting(true, b"lo\r"));
+        assert!(drafting(false, b"one\rtwo"));
+        assert!(!drafting(true, &[0x03]));
+        // Arrows, the focus coming in, a mouse click: not writing.
+        assert!(!drafting(false, b"\x1b[A\x1b[I\x1b[<0;10;5M\x1bOP"));
+        // A paste is.
+        assert!(drafting(false, b"\x1b[200~some text\x1b[201~"));
+    }
 
     #[test]
     fn an_agents_title_says_whether_it_works() {
