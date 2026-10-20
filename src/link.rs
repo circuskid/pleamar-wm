@@ -201,6 +201,102 @@ fn at_rest(i: &Info) -> bool {
 thread_local! {
     /// How many answers the target's hooks had told when the task was handed.
     static HANDED: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
+    /// When it was handed, in ms since the epoch: an answer kept before is not its.
+    static HANDED_AT: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
+}
+
+/// The agent's last answer, whole, from the record of the conversation it
+/// keeps: a full-screen agent (Codex, opencode) leaves nothing in the
+/// terminal's history, so the start of a long answer is gone from its screen.
+/// Only one given after `after` (ms since the epoch) to a task that came
+/// through a wire, or —`after` 0— the last one.
+fn kept_answer(i: &Info, after: u64) -> Option<String> {
+    let cwd = i.get("cwd").filter(|c| !c.is_empty())?;
+    match i.get("agent")?.as_str() {
+        "codex" => codex_answer(cwd, after),
+        "opencode" => opencode_answer(cwd, after),
+        _ => None,
+    }
+}
+
+/// Codex writes each conversation in `~/.codex/sessions/…/rollout-*.jsonl`
+/// (or `$CODEX_HOME`'s): the one in that folder written last, and in it the
+/// answer that ended the turn the task began.
+fn codex_answer(cwd: &str, after: u64) -> Option<String> {
+    let home = std::env::var("CODEX_HOME").ok().filter(|h| !h.is_empty()).unwrap_or_else(|| format!("{}/.codex", std::env::var("HOME").unwrap_or_default()));
+    let mut files = Vec::new();
+    let mut dirs = vec![std::path::PathBuf::from(format!("{home}/sessions"))];
+    while let Some(d) = dirs.pop() {
+        for e in std::fs::read_dir(&d).into_iter().flatten().flatten() {
+            let p = e.path();
+            let Ok(m) = e.metadata() else { continue };
+            if m.is_dir() {
+                dirs.push(p);
+            } else if p.extension().is_some_and(|x| x == "jsonl") {
+                let at = m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_millis() as u64);
+                if at + 1000 >= after {
+                    files.push((at, p));
+                }
+            }
+        }
+    }
+    files.sort();
+    for (_, p) in files.iter().rev() {
+        let Ok(text) = std::fs::read_to_string(p) else { continue };
+        if let Some(found) = codex_said(&text, cwd, after) {
+            return found;
+        }
+    }
+    None
+}
+
+/// Of one of Codex's records, if it is that folder's: the answer that ended
+/// the turn the last task through a wire began (after `after`), if it has ended.
+fn codex_said(text: &str, cwd: &str, after: u64) -> Option<Option<String>> {
+    let mut lines = text.lines().filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok());
+    if lines.next()?["payload"]["cwd"].as_str() != Some(cwd) {
+        return None;
+    }
+    let (mut asked, mut answer) = (after == 0, None);
+    for v in lines {
+        let p = &v["payload"];
+        if after > 0 && p["role"] == "user" && p["content"].as_array().is_some_and(|c| c.iter().any(|t| t["text"].as_str().is_some_and(|t| t.contains("through a wire]")))) {
+            asked = true;
+            answer = None;
+        }
+        if asked && p["type"] == "task_complete" && p["completed_at"].as_u64().is_some_and(|s| s * 1000 + 1000 >= after) {
+            answer = p["last_agent_message"].as_str().map(str::to_owned);
+        }
+    }
+    Some(answer.filter(|a| !a.trim().is_empty()))
+}
+
+/// opencode keeps its conversations in a database of its own, and says one
+/// as JSON (`opencode export`): of the folder's last, the last message it
+/// finished after the task, in its words.
+fn opencode_answer(cwd: &str, after: u64) -> Option<String> {
+    // Into a file: into a pipe, it stops at 64 KB (it leaves before the rest is read).
+    let run = |args: &[&str]| -> Option<serde_json::Value> {
+        let path = format!("{}/pleamar-link-opencode-{}.json", std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".into()), std::process::id());
+        let file = std::fs::File::create(&path).ok()?;
+        let ran = std::process::Command::new("opencode").args(args).current_dir(cwd).stdin(std::process::Stdio::null()).stdout(file).stderr(std::process::Stdio::null()).status();
+        let text = std::fs::read(&path);
+        let _ = std::fs::remove_file(&path);
+        ran.ok()?;
+        serde_json::from_slice(&text.ok()?).ok()
+    };
+    let list = run(&["session", "list", "--format", "json"])?;
+    let session = list.as_array()?.iter().filter(|s| s["directory"].as_str() == Some(cwd) && s["updated"].as_u64().is_some_and(|u| u + 1000 >= after)).max_by_key(|s| s["updated"].as_u64())?;
+    let all = run(&["export", session["id"].as_str()?])?;
+    let said = |m: &serde_json::Value| m["parts"].as_array().map(|ps| ps.iter().filter(|p| p["type"] == "text").filter_map(|p| p["text"].as_str()).collect::<Vec<_>>().join("\n")).unwrap_or_default();
+    let messages = all["messages"].as_array()?;
+    let from = if after == 0 { 0 } else { messages.iter().rposition(|m| m["info"]["role"] == "user" && said(m).contains("through a wire]"))? };
+    let last = messages[from..].iter().rev().find(|m| m["info"]["role"] == "assistant" && m["info"]["time"]["completed"].is_u64() && !said(m).trim().is_empty())?;
+    Some(said(last).trim().to_owned())
 }
 
 /// How a wait ended.
@@ -294,10 +390,17 @@ fn since(id: i32, before: usize) -> String {
             return text;
         }
     }
+    let i = info(id);
+    if let Some(text) = kept_answer(&i, HANDED_AT.with(|h| h.get())) {
+        return text;
+    }
     let all = read(id, 2000);
     let lines: Vec<&str> = all.lines().collect();
+    // A full-screen agent has no history: what is not on its screen is gone, and
+    // `before` counted lines of a screen that has been drawn again since.
     let from = match handed_at(&lines) {
         Some(k) => k + 1,
+        None if i.get("fullscreen").map(String::as_str) == Some("1") => 0,
         None => before.saturating_sub(3).min(lines.len()),
     };
     answer(&lines[from..])
@@ -357,7 +460,7 @@ fn answer(lines: &[&str]) -> String {
     // Codex's `─ Worked for 2s ───`).
     while kept.last().is_some_and(|l| {
         let t = l.trim_start();
-        t.is_empty() || t.starts_with("Worked for") || matches!(t.chars().next(), Some('✻' | '✳' | '✶' | '✽' | '✢' | '·' | '─')) || (start.is_none() && took(t))
+        t.is_empty() || t.starts_with("Worked for") || t.contains("? for shortcuts") || t.contains("ctrl+p commands") || matches!(t.chars().next(), Some('✻' | '✳' | '✶' | '✽' | '✢' | '·' | '─')) || (start.is_none() && took(t))
     }) {
         kept.pop();
     }
@@ -500,7 +603,7 @@ pub(crate) fn go(args: &[String]) -> Result<String, String> {
                 "wait" => {
                     let timeout = Duration::from_secs(number(rest, "--timeout", 600));
                     match wait_for(id, timeout, true) {
-                        Waited::Done => Ok(answer(&read(id, 120).lines().collect::<Vec<_>>())),
+                        Waited::Done => Ok(kept_answer(&info(id), 0).unwrap_or_else(|| answer(&read(id, 120).lines().collect::<Vec<_>>()))),
                         Waited::Asks(q) => Ok(said(w.slot, &q)),
                         Waited::Gone => Err(format!("window {}'s terminal is gone", w.slot)),
                         Waited::Late => Err(format!("window {} is still at it after {} s", w.slot, timeout.as_secs())),
@@ -541,6 +644,7 @@ pub(crate) fn go(args: &[String]) -> Result<String, String> {
                     let who = h.info.get("agent").filter(|a| !a.is_empty()).cloned().unwrap_or_else(|| "a shell".into());
                     let before = read(id, 2000).lines().count();
                     HANDED.with(|c| c.set(Some(hooked_answer(id).0)));
+                    HANDED_AT.with(|c| c.set(now_ms()));
                     // The drop runs along the wire, towards it, while it works.
                     flow(k, if mine_is_a { 1 } else { -1 });
                     // A line that says what this is, as a paste of its own (a long
@@ -585,7 +689,7 @@ pub(crate) fn go(args: &[String]) -> Result<String, String> {
                     // answer into this terminal when it is there.
                     let me_exe = std::env::current_exe().map_err(|e| e.to_string())?;
                     let mut c = std::process::Command::new("setsid");
-                    c.arg("-f").arg(me_exe).args(["link", "_deliver", &id.to_string(), &h.layer.to_string(), &k.to_string(), &(mine_is_a as u8).to_string(), &before.to_string(), &timeout.to_string(), &w.slot.to_string(), &HANDED.with(|c| c.get()).unwrap_or(u64::MAX).to_string()]);
+                    c.arg("-f").arg(me_exe).args(["link", "_deliver", &id.to_string(), &h.layer.to_string(), &k.to_string(), &(mine_is_a as u8).to_string(), &before.to_string(), &timeout.to_string(), &w.slot.to_string(), &HANDED.with(|c| c.get()).unwrap_or(u64::MAX).to_string(), &HANDED_AT.with(|c| c.get()).to_string()]);
                     c.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
                     c.spawn().map_err(|e| e.to_string())?;
                     Ok(format!("Handed to window {} «{}». Its answer will be typed into this terminal when it is done; or `pleamar-wm link wait {}`.", w.slot, w.title, w.slot))
@@ -597,6 +701,7 @@ pub(crate) fn go(args: &[String]) -> Result<String, String> {
             let n = |i: usize| rest.get(i).and_then(|v| v.parse::<i64>().ok()).unwrap_or(0);
             let (id, mine, k, mine_is_a, before, timeout, slot) = (n(0) as i32, n(1) as i32, n(2) as usize, n(3) == 1, n(4) as usize, n(5) as u64, n(6));
             HANDED.with(|c| c.set(rest.get(7).and_then(|v| v.parse().ok())));
+            HANDED_AT.with(|c| c.set(rest.get(8).and_then(|v| v.parse().ok()).unwrap_or(0)));
             let deadline = Instant::now() + Duration::from_secs(timeout);
             let mut told = String::new();
             let done = loop {
@@ -1055,6 +1160,30 @@ mod tests {
         let lines: Vec<&str> = screen.lines().collect();
         let from = handed_at(&lines).expect("its box's first line") + 1;
         assert_eq!(answer(&lines[from..]), "     Hola Claude! Soy deepseek-v4.1-flash-free, corriendo como opencode.");
+    }
+
+    #[test]
+    fn a_codex_answer_is_read_whole_from_its_record() {
+        let long = (1..=60).map(|k| format!("line {k}")).collect::<Vec<_>>().join("\n");
+        let record = [
+            r#"{"type":"session_meta","payload":{"cwd":"/w"}}"#.to_owned(),
+            r#"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"[a task from claude in window 0 «x», through a wire] It is in the pasted text: do it, and end with your answer.first"}]}}"#.to_owned(),
+            r#"{"type":"event_msg","payload":{"type":"task_complete","completed_at":100,"last_agent_message":"the first answer"}}"#.to_owned(),
+            r#"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"[a task from claude in window 0 «x», through a wire] It is in the pasted text: do it, and end with your answer.second"}]}}"#.to_owned(),
+            serde_json::json!({"type": "event_msg", "payload": {"type": "task_complete", "completed_at": 200, "last_agent_message": long}}).to_string(),
+        ]
+        .join("\n");
+        assert_eq!(codex_said(&record, "/w", 150_000), Some(Some(long.clone())));
+        assert_eq!(codex_said(&record, "/w", 0), Some(Some(long)));
+        // Another folder's is not looked into; a task whose turn has not ended yet has no answer.
+        assert_eq!(codex_said(&record, "/other", 0), None);
+        assert_eq!(codex_said(&record, "/w", 300_000), Some(None));
+    }
+
+    #[test]
+    fn what_codex_and_opencode_draw_at_the_bottom_is_no_answer() {
+        assert_eq!(answer(&["  GPT-6-Luna high · ~/Proyectos/pleamar-wm", "  ← for agents · ? for shortcuts"]), "  GPT-6-Luna high · ~/Proyectos/pleamar-wm");
+        assert_eq!(answer(&["   /home/abel/Proyectos/pleamar-wm                      28.3K (14%)  ctrl+p commands"]), "");
     }
 
     #[test]
