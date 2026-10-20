@@ -137,11 +137,11 @@ fn tools() -> Vec<Tool> {
         Tool {
             name: "link_spawn",
             about: "Open a new terminal with an agent (claude, codex…) beside your window, already wired to it, and hand it a task. Returns its window number; its answer comes as with link_delegate.",
-            args: json!({ "agent": { "type": "string", "description": "claude, codex, gemini, opencode…" }, "task": { "type": "string" }, "folder": { "type": "string", "description": "Where it works (yours by default)." }, "name": { "type": "string", "description": "A name for the wire («tests»)." } }),
+            args: json!({ "agent": { "type": "string", "description": "claude, codex, gemini, opencode…" }, "task": { "type": "string" }, "folder": { "type": "string", "description": "Where it works (yours by default)." }, "name": { "type": "string", "description": "A name for the wire («tests»)." }, "model": { "type": "string", "description": "The model it starts on, as that agent names it (claude-sonnet-5-5, gpt-6-luna…); its own default if not said." } }),
             needed: &["agent", "task"],
             words: |a| {
                 let mut w = vec!["spawn".into(), s(a, "agent"), s(a, "task")];
-                for (k, flag) in [("folder", "--folder"), ("name", "--name")] {
+                for (k, flag) in [("folder", "--folder"), ("name", "--name"), ("model", "--model")] {
                     if !s(a, k).is_empty() {
                         w.extend([flag.into(), s(a, k)]);
                     }

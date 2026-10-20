@@ -510,7 +510,7 @@ pub fn run(args: &[String]) -> i32 {
 
 const USAGE: &str = "pleamar-wm link — the windows wired to yours (on a canvas, the person wires them)
   whoami                          which window you are, and what is wired to it
-  spawn AGENT TASK [--folder D] [--name NAME]
+  spawn AGENT TASK [--folder D] [--name NAME] [--model M]
                                   a new terminal beside yours, wired to it, with that agent
                                   (claude, codex…) started and TASK handed to it
   setup [--yes] [--undo]          lets your agents use wires by themselves: the skill, the MCP
@@ -902,6 +902,14 @@ fn start(exe: &str, cwd: &str, quiet: bool) -> Result<u32, String> {
     // the caller's layer `SHELL` is the real shell again; the new terminal
     // starts the session's link to it, as one the session starts does.
     c.env_remove("PLEAMAR_TERMINAL").env_remove("PLEAMAR_TTY");
+    // Nor as a child of the caller's agent: what it marks its own commands
+    // with (a Claude Code started under it saves no transcript of its own).
+    for (k, _) in std::env::vars_os() {
+        let name = k.to_string_lossy();
+        if agent_marker(&name) {
+            c.env_remove(&k);
+        }
+    }
     if let Some(link) = std::env::var("PLEAMAR_REAL_SHELL").ok().and_then(|real| crate::term::link_of(&real)) {
         c.env("SHELL", link);
     }
@@ -911,6 +919,12 @@ fn start(exe: &str, cwd: &str, quiet: bool) -> Result<u32, String> {
     use std::os::unix::process::CommandExt;
     c.process_group(0);
     c.spawn().map(|ch| ch.id()).map_err(|e| format!("{exe}: {e}"))
+}
+
+/// What an agent puts in the environment of the commands it runs, so they know
+/// they run under it; not what the person sets (`CODEX_HOME`, `CLAUDE_CONFIG_DIR`).
+fn agent_marker(name: &str) -> bool {
+    name.starts_with("CLAUDE_CODE_") || matches!(name, "CLAUDECODE" | "CLAUDE_PID" | "CLAUDE_EFFORT" | "AI_AGENT" | "CODEX_SANDBOX" | "CODEX_SANDBOX_NETWORK_DISABLED" | "CODEX_THREAD_ID" | "OPENCODE" | "OPENCODE_PID")
 }
 
 /// A terminal opened for an agent: the same program as the caller's (kitty,
@@ -934,11 +948,11 @@ pub(crate) fn open_terminal(exe: &str, cwd: &str, quiet: bool) -> Result<(usize,
     Err(format!("{exe} opened no window with a terminal of its own in 20 s"))
 }
 
-/// `link spawn AGENT TASK [--folder D] [--name L]`: a new terminal beside the
-/// caller's window, wired to it, with that agent started, and the task
-/// handed as with `delegate`.
+/// `link spawn AGENT TASK [--folder D] [--name L] [--model M]`: a new terminal
+/// beside the caller's window, wired to it, with that agent started (on that
+/// model), and the task handed as with `delegate`.
 fn spawn(rest: &[String]) -> Result<String, String> {
-    let agent = rest.first().ok_or("spawn AGENT TASK [--folder DIR] [--name NAME]")?.to_lowercase();
+    let agent = rest.first().ok_or("spawn AGENT TASK [--folder DIR] [--name NAME] [--model MODEL]")?.to_lowercase();
     let flag = |f: &str| rest.iter().position(|a| a == f).and_then(|p| rest.get(p + 1)).cloned();
     let mut words: Vec<&str> = Vec::new();
     let mut skip = false;
@@ -947,7 +961,7 @@ fn spawn(rest: &[String]) -> Result<String, String> {
             skip = false;
             continue;
         }
-        if a == "--folder" || a == "--name" {
+        if a == "--folder" || a == "--name" || a == "--model" {
             skip = true;
             continue;
         }
@@ -955,7 +969,7 @@ fn spawn(rest: &[String]) -> Result<String, String> {
     }
     let task = words.join(" ");
     if task.is_empty() {
-        return Err("spawn AGENT TASK [--folder DIR] [--name NAME]".into());
+        return Err("spawn AGENT TASK [--folder DIR] [--name NAME] [--model MODEL]".into());
     }
     let command = match agent.as_str() {
         "claude" | "claude-code" => "claude",
@@ -965,6 +979,12 @@ fn spawn(rest: &[String]) -> Result<String, String> {
         "qwen" => "qwen",
         "copilot" => "copilot",
         other => return Err(format!("«{other}»: claude, codex, gemini, opencode, qwen or copilot")),
+    };
+    // Typed at a shell: a model's name is letters, digits and `-._/:` only.
+    let command = match flag("--model") {
+        Some(m) if !m.is_empty() && m.chars().all(|c| c.is_ascii_alphanumeric() || "-._/:".contains(c)) => format!("{command} {} {m}", if matches!(command, "claude" | "copilot") { "--model" } else { "-m" }),
+        Some(m) => return Err(format!("«{m}» is not a model's name")),
+        None => command.to_owned(),
     };
     let h = here()?;
     let cwd = flag("--folder").map(|f| f.replacen('~', &std::env::var("HOME").unwrap_or_default(), 1)).unwrap_or_else(|| h.info.get("cwd").cloned().unwrap_or_else(|| ".".into()));
@@ -988,7 +1008,7 @@ fn spawn(rest: &[String]) -> Result<String, String> {
     }
     say(&orders);
     // The agent, and once it is ready, the task.
-    paste(id, command)?;
+    paste(id, &command)?;
     std::thread::sleep(Duration::from_millis(120));
     keys(id, "enter")?;
     let deadline = Instant::now() + Duration::from_secs(40);
@@ -1184,6 +1204,16 @@ mod tests {
     fn what_codex_and_opencode_draw_at_the_bottom_is_no_answer() {
         assert_eq!(answer(&["  GPT-6-Luna high · ~/Proyectos/pleamar-wm", "  ← for agents · ? for shortcuts"]), "  GPT-6-Luna high · ~/Proyectos/pleamar-wm");
         assert_eq!(answer(&["   /home/abel/Proyectos/pleamar-wm                      28.3K (14%)  ctrl+p commands"]), "");
+    }
+
+    #[test]
+    fn an_agents_marks_are_left_out_and_the_persons_settings_kept() {
+        for m in ["CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_SESSION_ID", "AI_AGENT", "CODEX_THREAD_ID", "OPENCODE"] {
+            assert!(agent_marker(m), "{m}");
+        }
+        for k in ["CODEX_HOME", "CLAUDE_CONFIG_DIR", "ANTHROPIC_API_KEY", "PATH"] {
+            assert!(!agent_marker(k), "{k}");
+        }
     }
 
     #[test]

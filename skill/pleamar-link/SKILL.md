@@ -32,7 +32,7 @@ pleamar-wm link read N [LINES]           # its terminal's last lines
 pleamar-wm link send N "text" --enter    # type into it (a shell, a program); for an agent, delegate
 pleamar-wm link keys N escape            # keys: enter tab escape up down ctrl+c 1 …
 pleamar-wm link label N tests            # name the wire to N
-pleamar-wm link spawn codex "TASK" [--folder DIR] [--name NAME]   # a new terminal beside yours, wired, with that agent and TASK
+pleamar-wm link spawn codex "TASK" [--folder DIR] [--name NAME] [--model M]   # a new terminal beside yours, wired, with that agent (on that model) and TASK
 ```
 
 `N` is a window's number from `list`, the name of its wire (`tests`), or the
