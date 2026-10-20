@@ -291,7 +291,8 @@ cargo build --release
 
 ### NixOS
 
-pleamar-wm, pleamar and Marea, with «pleamar-wm» in your login screen:
+pleamar-wm (and `pleamar`, the one inside it) and Marea, with «pleamar-wm» in
+your login screen:
 
 ```nix
 # flake.nix

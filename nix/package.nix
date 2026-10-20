@@ -125,6 +125,10 @@ rustPlatform.buildRustPackage {
       } \
       --set-default FONTCONFIG_FILE ${fontconfig.out}/etc/fonts/fonts.conf
     wrapProgram $out/bin/pleamar-session --prefix PATH : $out/bin
+    # pleamar itself is the one inside: called `pleamar` it runs as pleamar
+    # (src/main.rs), so scenes, `pleamar --say` and `--check` need no second
+    # build of it. The wrapper keeps the name it was called by (exec -a).
+    ln -s pleamar-wm $out/bin/pleamar
   '';
 
   passthru.providedSessions = [ "pleamar-wm" ];
