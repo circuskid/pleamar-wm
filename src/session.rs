@@ -218,9 +218,9 @@ struct State {
     keymap: xkb::State,
     pointer: (f64, f64),
     /// The cursor's shapes on the card, each with its hot spot, and which is shown.
-    /// Each shape, for each way a monitor stands (quarter turns): its image
-    /// on the card and its tip, both turned.
-    cursors: Vec<(Cursor, u8, gbm::BufferObject<()>, (i32, i32))>,
+    /// Each shape, for each way a monitor stands (quarter turns) and each size
+    /// the monitors' scales ask for: its image on the card and its tip, both turned.
+    cursors: Vec<(Cursor, u8, u32, gbm::BufferObject<()>, (i32, i32))>,
     shown: Option<Cursor>,
     /// What the scene asks for, and what a program's surface under the pointer does.
     scene_cursor: Cursor,
@@ -239,7 +239,7 @@ struct State {
     route: Route,
     /// Each shape's picture as it is on the card, unturned, with its tip: for
     /// whoever puts the pointer into a picture (sharing the screen).
-    cursor_pictures: Vec<(Cursor, std::sync::Arc<(Vec<u8>, (i32, i32))>)>,
+    cursor_pictures: Vec<(Cursor, u32, std::sync::Arc<(Vec<u8>, (i32, i32))>)>,
     /// The loop's handle: to start the timer of a key binding that repeats.
     handle: smithay::reexports::calloop::LoopHandle<'static, State>,
     /// What is needed to put monitors up when they are plugged in: the card's
@@ -506,6 +506,18 @@ fn choose_mode(modes: &[Mode], wish: Option<&config::ModeWish>) -> Option<Mode> 
         Some(config::ModeWish::Highest) => modes.iter().max_by_key(|m| (m.size().0 as u32 * m.size().1 as u32, refresh_mhz(m))).copied(),
         _ => preferred,
     }
+}
+
+/// The cursor's size a scale asks for: XCURSOR_SIZE (24) times it.
+fn cursor_size_at(scale: f64) -> u32 {
+    static BASE: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
+    let base = *BASE.get_or_init(|| std::env::var("XCURSOR_SIZE").ok().and_then(|v| v.parse::<f64>().ok()).filter(|v| *v > 0.0).unwrap_or(24.0));
+    (base * scale).round() as u32
+}
+
+/// And the one a monitor asks for, at its scale.
+fn cursor_size(m: &Monitor) -> u32 {
+    cursor_size_at(m.scale)
 }
 
 /// Where a point of a monitor seen upright (`size` its upright size) falls
@@ -791,7 +803,7 @@ impl State {
         // The monitor is put together in its pixels: from units to them, and
         // on one standing on its side, turned the way it stands.
         for (k, m) in self.monitors.iter().enumerate() {
-            let hot = self.shown.and_then(|c| self.cursors.iter().find(|x| x.0 == c && x.1 == m.turn).or_else(|| self.cursors.iter().find(|x| x.0 == c && x.1 == 0))).map_or((0, 0), |x| x.3);
+            let hot = self.shown.and_then(|c| self.cursor_of(c, m)).map_or((0, 0), |x| x.4);
             let (cx, cy) = if k == on {
                 let (x, y) = turned_point(m.turn, ((px - m.x as f64) * m.scale, (py - m.y as f64) * m.scale), (m.size.0 as f64, m.size.1 as f64));
                 (x as i32 - hot.0, y as i32 - hot.1)
@@ -825,9 +837,13 @@ impl State {
             let text = std::fs::read_to_string(format!("{home}/.icons/default/index.theme")).ok()?;
             text.lines().find_map(|l| l.trim().strip_prefix("Inherits=")).map(|v| v.split(',').next().unwrap_or("").trim().to_owned())
         });
-        // As big as the monitors' scale asks (the plane holds up to 64).
-        let most = self.monitors.iter().map(|m| m.scale).fold(1.0, f64::max);
-        let size: u32 = (std::env::var("XCURSOR_SIZE").ok().and_then(|v| v.parse::<f64>().ok()).unwrap_or(24.0) * most).round() as u32;
+        // As big as each monitor's scale asks (the plane holds up to 64).
+        let mut sizes: Vec<u32> = self.monitors.iter().map(cursor_size).collect();
+        if sizes.is_empty() {
+            sizes.push(cursor_size_at(1.0));
+        }
+        sizes.sort();
+        sizes.dedup();
         let names: [(Cursor, &[&str]); 12] = [
             (Cursor::Normal, &["default", "left_ptr", "arrow"]),
             (Cursor::Hand, &["pointer", "hand2", "pointing_hand", "hand1"]),
@@ -844,78 +860,88 @@ impl State {
         ];
         let loaded = theme.as_deref().map(xcursor::CursorTheme::load);
         for (kind, candidates) in names {
-            let image = loaded.as_ref().and_then(|t| {
-                candidates.iter().find_map(|n| {
-                    let path = t.load_icon(n)?;
-                    let data = std::fs::read(path).ok()?;
-                    let images = xcursor::parser::parse_xcursor(&data)?;
-                    // The size closest to the one asked for, that fits the plane.
-                    images.into_iter().filter(|i| i.width <= 64 && i.height <= 64).min_by_key(|i| (i.size as i64 - size as i64).abs())
-                })
-            });
-            let Ok(mut bo) = gbm.lock().unwrap().create_buffer_object::<()>(64, 64, gbm::Format::Argb8888, gbm::BufferObjectFlags::CURSOR | gbm::BufferObjectFlags::WRITE) else {
-                eprintln!("session · no cursor on the card: the pointer will not be seen");
-                return;
-            };
-            let mut px = vec![0u8; 64 * 64 * 4];
-            let hot = match &image {
-                Some(i) => {
-                    for y in 0..i.height as usize {
-                        let row = &i.pixels_rgba[y * i.width as usize * 4..(y + 1) * i.width as usize * 4];
-                        px[y * 64 * 4..y * 64 * 4 + row.len()].copy_from_slice(row);
+            for &size in &sizes {
+                let image = loaded.as_ref().and_then(|t| {
+                    candidates.iter().find_map(|n| {
+                        let path = t.load_icon(n)?;
+                        let data = std::fs::read(path).ok()?;
+                        let images = xcursor::parser::parse_xcursor(&data)?;
+                        // The size closest to the one asked for, that fits the plane.
+                        images.into_iter().filter(|i| i.width <= 64 && i.height <= 64).min_by_key(|i| (i.size as i64 - size as i64).abs())
+                    })
+                });
+                let Ok(mut bo) = gbm.lock().unwrap().create_buffer_object::<()>(64, 64, gbm::Format::Argb8888, gbm::BufferObjectFlags::CURSOR | gbm::BufferObjectFlags::WRITE) else {
+                    eprintln!("session · no cursor on the card: the pointer will not be seen");
+                    return;
+                };
+                let mut px = vec![0u8; 64 * 64 * 4];
+                let hot = match &image {
+                    Some(i) => {
+                        for y in 0..i.height as usize {
+                            let row = &i.pixels_rgba[y * i.width as usize * 4..(y + 1) * i.width as usize * 4];
+                            px[y * 64 * 4..y * 64 * 4 + row.len()].copy_from_slice(row);
+                        }
+                        (i.xhot as i32, i.yhot as i32)
                     }
-                    (i.xhot as i32, i.yhot as i32)
+                    None => {
+                        if kind != Cursor::Normal {
+                            continue;
+                        }
+                        // The usual arrow: white, with a dark edge.
+                        let arrow: [&str; 19] = [
+                            "X", "XX", "X.X", "X..X", "X...X", "X....X", "X.....X", "X......X", "X.......X", "X........X", "X.........X", "X..........X", "X......XXXXX", "X...X..X", "X..XX..X",
+                            "X.X  X..X", "XX   X..X", "X     X..X", "      XXX",
+                        ];
+                        for (y, row) in arrow.iter().enumerate() {
+                            for (x, c) in row.chars().enumerate() {
+                                let v: [u8; 4] = match c {
+                                    'X' => [20, 20, 20, 255],
+                                    '.' => [255, 255, 255, 255],
+                                    _ => continue,
+                                };
+                                let i = (y * 64 + x) * 4;
+                                px[i..i + 4].copy_from_slice(&v);
+                            }
+                        }
+                        (0, 0)
+                    }
+                };
+                if bo.write(&px).is_err() {
+                    continue;
                 }
-                None => {
-                    if kind != Cursor::Normal {
-                        continue;
-                    }
-                    // The usual arrow: white, with a dark edge.
-                    let arrow: [&str; 19] = [
-                        "X", "XX", "X.X", "X..X", "X...X", "X....X", "X.....X", "X......X", "X.......X", "X........X", "X.........X", "X..........X", "X......XXXXX", "X...X..X", "X..XX..X",
-                        "X.X  X..X", "XX   X..X", "X     X..X", "      XXX",
-                    ];
-                    for (y, row) in arrow.iter().enumerate() {
-                        for (x, c) in row.chars().enumerate() {
-                            let v: [u8; 4] = match c {
-                                'X' => [20, 20, 20, 255],
-                                '.' => [255, 255, 255, 255],
-                                _ => continue,
-                            };
-                            let i = (y * 64 + x) * 4;
-                            px[i..i + 4].copy_from_slice(&v);
+                self.cursor_pictures.push((kind, size, std::sync::Arc::new((px.clone(), hot))));
+                self.cursors.push((kind, 0, size, bo, hot));
+                // And turned, for the monitors that stand on their side.
+                let mut turns: Vec<u8> = self.monitors.iter().map(|m| m.turn).filter(|t| *t != 0).collect();
+                turns.sort();
+                turns.dedup();
+                for turn in turns {
+                    let mut out = vec![0u8; 64 * 64 * 4];
+                    for y in 0..64usize {
+                        for x in 0..64usize {
+                            let (qx, qy) = turned_point(turn, (x as f64, y as f64), (63.0, 63.0));
+                            let (i, o) = ((y * 64 + x) * 4, (qy as usize * 64 + qx as usize) * 4);
+                            out[o..o + 4].copy_from_slice(&px[i..i + 4]);
                         }
                     }
-                    (0, 0)
-                }
-            };
-            if bo.write(&px).is_err() {
-                continue;
-            }
-            self.cursor_pictures.push((kind, std::sync::Arc::new((px.clone(), hot))));
-            self.cursors.push((kind, 0, bo, hot));
-            // And turned, for the monitors that stand on their side.
-            let mut turns: Vec<u8> = self.monitors.iter().map(|m| m.turn).filter(|t| *t != 0).collect();
-            turns.sort();
-            turns.dedup();
-            for turn in turns {
-                let mut out = vec![0u8; 64 * 64 * 4];
-                for y in 0..64usize {
-                    for x in 0..64usize {
-                        let (qx, qy) = turned_point(turn, (x as f64, y as f64), (63.0, 63.0));
-                        let (i, o) = ((y * 64 + x) * 4, (qy as usize * 64 + qx as usize) * 4);
-                        out[o..o + 4].copy_from_slice(&px[i..i + 4]);
+                    let (hx, hy) = turned_point(turn, (hot.0 as f64, hot.1 as f64), (63.0, 63.0));
+                    let Ok(mut bo) = gbm.lock().unwrap().create_buffer_object::<()>(64, 64, gbm::Format::Argb8888, gbm::BufferObjectFlags::CURSOR | gbm::BufferObjectFlags::WRITE) else { continue };
+                    if bo.write(&out).is_ok() {
+                        self.cursors.push((kind, turn, size, bo, (hx as i32, hy as i32)));
                     }
-                }
-                let (hx, hy) = turned_point(turn, (hot.0 as f64, hot.1 as f64), (63.0, 63.0));
-                let Ok(mut bo) = gbm.lock().unwrap().create_buffer_object::<()>(64, 64, gbm::Format::Argb8888, gbm::BufferObjectFlags::CURSOR | gbm::BufferObjectFlags::WRITE) else { continue };
-                if bo.write(&out).is_ok() {
-                    self.cursors.push((kind, turn, bo, (hx as i32, hy as i32)));
                 }
             }
         }
-        println!("session · cursor: {} ({} shapes)", theme.as_deref().unwrap_or("its own arrow"), self.cursors.len());
+        println!("session · cursor: {} at {:?} px ({} shapes)", theme.as_deref().unwrap_or("its own arrow"), sizes, self.cursors.len());
         self.show_cursor();
+    }
+
+    /// That shape as that monitor shows it: turned as it stands (or not, if
+    /// there is none turned), of the size closest to what its scale asks.
+    fn cursor_of(&self, kind: Cursor, m: &Monitor) -> Option<&(Cursor, u8, u32, gbm::BufferObject<()>, (i32, i32))> {
+        let size = cursor_size(m);
+        let turn = if self.cursors.iter().any(|c| c.0 == kind && c.1 == m.turn) { m.turn } else { 0 };
+        self.cursors.iter().filter(|c| c.0 == kind && c.1 == turn).min_by_key(|c| c.2.abs_diff(size))
     }
 
     /// The cursor of whoever has the pointer, if it is not the one shown.
@@ -932,12 +958,13 @@ impl State {
         use smithay::reexports::drm::buffer::Buffer;
         for m in &self.monitors {
             let Some(crtc) = m.crtc else { continue };
-            let Some((_, _, bo, hot)) = self.cursors.iter().find(|c| c.0 == want && c.1 == m.turn).or_else(|| self.cursors.iter().find(|c| c.0 == want && c.1 == 0)) else { continue };
+            let Some((_, _, _, bo, hot)) = self.cursor_of(want, m) else { continue };
             let image = CursorImage { size: Buffer::size(bo), format: Buffer::format(bo), pitch: Buffer::pitch(bo), handle: Buffer::handle(bo) };
             self.mover.shape(crtc, image, *hot);
         }
         self.shown = Some(want);
-        layers::set_pointer_picture(self.cursor_pictures.iter().find(|c| c.0 == want).map(|c| c.1.clone()));
+        // For a picture of the screen, the biggest: as sharp as any monitor's.
+        layers::set_pointer_picture(self.cursor_pictures.iter().filter(|c| c.0 == want).max_by_key(|c| c.1).map(|c| c.2.clone()));
         // Its tip where the pointer is (told again: a new shape may have
         // put the plane back anywhere).
         self.mover.sent.clear();
