@@ -24,7 +24,7 @@
 //   Super+V    the window with the keyboard floats over the tiles, and back
 //   Free is a canvas: a plane with no edges that the monitor looks at
 //              through a camera —Super and a drag on the empty plane to move
-//              about, the wheel to come closer or go further, Super+-/+ too, Super+0 to
+//              about, Super and the wheel to come closer or go further, Super+-/+ too, Super+0 to
 //              see them all—; let go near another window's edge, it takes
 //              its side; a window's port, dragged to another, wires them
 //              (only it: its monitor stays tiled, the others close up)
@@ -427,7 +427,7 @@ scene Session {
     fact wgone.n = 0
     // ── the canvas's plane, under the windows: a faint grid of it, that
     // moves and comes closer with the camera; and the empty plane, dragged
-    // with Super held, moves about, the wheel (Super and the wheel, over a window) zooms
+    // with Super held, moves about, Super and the wheel zooms
     // where the pointer is ──
     prop cvgx.0 = 0 ~glide
     prop cvgy.0 = 0 ~glide
@@ -604,7 +604,7 @@ scene Session {
     // window keeps its place on the plane (`fx`… are the plane's then, not
     // the monitor's) and the program is asked that size; the monitor shows
     // it as the camera sees it, smaller the further away. The empty plane,
-    // dragged with Super held, moves the camera; the wheel —or Super and the wheel, over a
+    // dragged with Super held, moves the camera; Super and the wheel —over the plane or a
     // window— brings it closer or further where the pointer is. ──
     fact cv.0 = 0
     fact cv.1 = 0
@@ -12075,11 +12075,10 @@ scene Session {
 
     // (After the windows: each one's box is known by now.)
     repeat i in 0..16 {
-        // The wheel on a canvas: only over the empty plane —a zone has the wheel
-        // over every zone under it, and the plane is under every window—, or
-        // with Super, anywhere. (Here, where each window's box is known; once.)
-        let cv.onwin = ((win.0.open and not win.0.minimized and win.0.screen == mon and win.0.pool == pick(mon, win.pool.0, win.pool.1, win.pool.2, win.pool.3) and mouse.x >= x.0 and mouse.x < x.0 + w.0 and mouse.y >= y.0 and mouse.y < y.0 + h.0) + (win.1.open and not win.1.minimized and win.1.screen == mon and win.1.pool == pick(mon, win.pool.0, win.pool.1, win.pool.2, win.pool.3) and mouse.x >= x.1 and mouse.x < x.1 + w.1 and mouse.y >= y.1 and mouse.y < y.1 + h.1) + (win.2.open and not win.2.minimized and win.2.screen == mon and win.2.pool == pick(mon, win.pool.0, win.pool.1, win.pool.2, win.pool.3) and mouse.x >= x.2 and mouse.x < x.2 + w.2 and mouse.y >= y.2 and mouse.y < y.2 + h.2) + (win.3.open and not win.3.minimized and win.3.screen == mon and win.3.pool == pick(mon, win.pool.0, win.pool.1, win.pool.2, win.pool.3) and mouse.x >= x.3 and mouse.x < x.3 + w.3 and mouse.y >= y.3 and mouse.y < y.3 + h.3) + (win.4.open and not win.4.minimized and win.4.screen == mon and win.4.pool == pick(mon, win.pool.0, win.pool.1, win.pool.2, win.pool.3) and mouse.x >= x.4 and mouse.x < x.4 + w.4 and mouse.y >= y.4 and mouse.y < y.4 + h.4) + (win.5.open and not win.5.minimized and win.5.screen == mon and win.5.pool == pick(mon, win.pool.0, win.pool.1, win.pool.2, win.pool.3) and mouse.x >= x.5 and mouse.x < x.5 + w.5 and mouse.y >= y.5 and mouse.y < y.5 + h.5) + (win.6.open and not win.6.minimized and win.6.screen == mon and win.6.pool == pick(mon, win.pool.0, win.pool.1, win.pool.2, win.pool.3) and mouse.x >= x.6 and mouse.x < x.6 + w.6 and mouse.y >= y.6 and mouse.y < y.6 + h.6) + (win.7.open and not win.7.minimized and win.7.screen == mon and win.7.pool == pick(mon, win.pool.0, win.pool.1, win.pool.2, win.pool.3) and mouse.x >= x.7 and mouse.x < x.7 + w.7 and mouse.y >= y.7 and mouse.y < y.7 + h.7) + (win.8.open and not win.8.minimized and win.8.screen == mon and win.8.pool == pick(mon, win.pool.0, win.pool.1, win.pool.2, win.pool.3) and mouse.x >= x.8 and mouse.x < x.8 + w.8 and mouse.y >= y.8 and mouse.y < y.8 + h.8) + (win.9.open and not win.9.minimized and win.9.screen == mon and win.9.pool == pick(mon, win.pool.0, win.pool.1, win.pool.2, win.pool.3) and mouse.x >= x.9 and mouse.x < x.9 + w.9 and mouse.y >= y.9 and mouse.y < y.9 + h.9) + (win.10.open and not win.10.minimized and win.10.screen == mon and win.10.pool == pick(mon, win.pool.0, win.pool.1, win.pool.2, win.pool.3) and mouse.x >= x.10 and mouse.x < x.10 + w.10 and mouse.y >= y.10 and mouse.y < y.10 + h.10) + (win.11.open and not win.11.minimized and win.11.screen == mon and win.11.pool == pick(mon, win.pool.0, win.pool.1, win.pool.2, win.pool.3) and mouse.x >= x.11 and mouse.x < x.11 + w.11 and mouse.y >= y.11 and mouse.y < y.11 + h.11) + (win.12.open and not win.12.minimized and win.12.screen == mon and win.12.pool == pick(mon, win.pool.0, win.pool.1, win.pool.2, win.pool.3) and mouse.x >= x.12 and mouse.x < x.12 + w.12 and mouse.y >= y.12 and mouse.y < y.12 + h.12) + (win.13.open and not win.13.minimized and win.13.screen == mon and win.13.pool == pick(mon, win.pool.0, win.pool.1, win.pool.2, win.pool.3) and mouse.x >= x.13 and mouse.x < x.13 + w.13 and mouse.y >= y.13 and mouse.y < y.13 + h.13) + (win.14.open and not win.14.minimized and win.14.screen == mon and win.14.pool == pick(mon, win.pool.0, win.pool.1, win.pool.2, win.pool.3) and mouse.x >= x.14 and mouse.x < x.14 + w.14 and mouse.y >= y.14 and mouse.y < y.14 + h.14) + (win.15.open and not win.15.minimized and win.15.screen == mon and win.15.pool == pick(mon, win.pool.0, win.pool.1, win.pool.2, win.pool.3) and mouse.x >= x.15 and mouse.x < x.15 + w.15 and mouse.y >= y.15 and mouse.y < y.15 + h.15)) > 0.5
-        on scroll canvas_bg while i == 0 and pick(mon, cv.0, cv.1, cv.2, cv.3) > 0.5 and (not cv.onwin or keys.super > 0.5) {
+        // Super and the wheel on a canvas, anywhere: a zone has the wheel over
+        // every zone under it, and the plane is under every window. Without
+        // Super the wheel is the window's, or nobody's. (Once.)
+        on scroll canvas_bg while i == 0 and pick(mon, cv.0, cv.1, cv.2, cv.3) > 0.5 and keys.super > 0.5 {
             cvw.k = mon
             cvw.d = wheel
             cvw.x = mouse.x

@@ -81,8 +81,8 @@ the open windows without closing anything.
   `terminals off` in session.conf leaves them all as they are.
 - **Free is a canvas** (0.5): a free monitor's windows live on a plane with
   no edges, seen through a camera, as an infinite whiteboard of windows. Super
-  and a drag on the empty plane to move about, the wheel (or Super and the wheel, over a
-  window) to come closer or go further right where the pointer is, `Super+0`
+  and a drag on the empty plane to move about, Super and the wheel (over the plane
+  or a window) to come closer or go further right where the pointer is, `Super+0`
   to see them all. Each program keeps its own size and is shown smaller when
   the camera is further away; let a window go near another one's edge and it
   takes its side, or against the monitor's edge and it takes that half or
