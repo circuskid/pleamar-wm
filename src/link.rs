@@ -361,11 +361,6 @@ fn wait_for(id: i32, timeout: Duration, asks: bool) -> Waited {
     Waited::Late
 }
 
-/// Waits for that terminal to be at rest, up to a time. Whether it got there.
-fn wait_rest(id: i32, timeout: Duration) -> bool {
-    matches!(wait_for(id, timeout, false), Waited::Done)
-}
-
 /// A question, said so an agent can answer it.
 fn said(slot: usize, q: &crate::term::Question) -> String {
     let mut out = format!("window {slot} asks: {}\n", q.text);
@@ -603,7 +598,10 @@ pub(crate) fn go(args: &[String]) -> Result<String, String> {
                 "wait" => {
                     let timeout = Duration::from_secs(number(rest, "--timeout", 600));
                     match wait_for(id, timeout, true) {
-                        Waited::Done => Ok(kept_answer(&info(id), 0).unwrap_or_else(|| answer(&read(id, 120).lines().collect::<Vec<_>>()))),
+                        Waited::Done => {
+                            taken(id);
+                            Ok(kept_answer(&info(id), 0).unwrap_or_else(|| answer(&read(id, 120).lines().collect::<Vec<_>>())))
+                        }
                         Waited::Asks(q) => Ok(said(w.slot, &q)),
                         Waited::Gone => Err(format!("window {}'s terminal is gone", w.slot)),
                         Waited::Late => Err(format!("window {} is still at it after {} s", w.slot, timeout.as_secs())),
@@ -723,6 +721,10 @@ pub(crate) fn go(args: &[String]) -> Result<String, String> {
                 }
             };
             back(k, mine_is_a);
+            // Already brought by `wait`: not typed a second time.
+            if taken_since(id, HANDED_AT.with(|h| h.get())) {
+                return Ok(String::new());
+            }
             let answer = since(id, before);
             let head = if done { format!("[the answer from window {slot}, to the task you handed it] It is in the pasted text.") } else { format!("[window {slot} did not finish your task in {timeout} s] What it said so far is in the pasted text.") };
             tell(mine, &head, &answer)?;
@@ -1032,12 +1034,40 @@ fn spawn(rest: &[String]) -> Result<String, String> {
 /// Into the asking agent's terminal, once it is free —not over its person
 /// typing, nor into the middle of its own work—: a line, the text, Enter.
 fn tell(mine: i32, head: &str, text: &str) -> Result<(), String> {
-    wait_rest(mine, Duration::from_secs(3600));
+    // Claude Code takes what is typed while it works, and reads it between two
+    // steps: there it only waits for its box to be empty (its person is not
+    // writing in it). Any other, until it is done.
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(3600) {
+        let i = info(mine);
+        if i.is_empty() || at_rest(&i) || (i.get("agent").map(String::as_str) == Some("claude") && claude_box_empty(&read(mine, 12))) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(700));
+    }
     paste(mine, head)?;
     std::thread::sleep(Duration::from_millis(120));
     paste(mine, text)?;
     std::thread::sleep(Duration::from_millis(150));
     keys(mine, "enter")
+}
+
+/// Claude Code's input box, between its two rules: nothing written after its `❯`.
+fn claude_box_empty(screen: &str) -> bool {
+    let lines: Vec<&str> = screen.lines().collect();
+    let rule = |l: &str| l.trim().chars().count() >= 20 && l.trim().chars().all(|c| c == '─');
+    let Some(k) = lines.iter().rposition(|l| l.trim_start().starts_with('❯')) else { return false };
+    k > 0 && rule(lines[k - 1]) && lines.get(k + 1).is_some_and(|l| rule(l)) && lines[k].trim_start().trim_start_matches('❯').trim().is_empty()
+}
+
+/// That a task's answer was brought by `wait`, and when: the process that
+/// would type it in later leaves it.
+fn taken(id: i32) {
+    let _ = std::fs::write(format!("{}/{id}.taken", crate::term::socket_dir()), now_ms().to_string());
+}
+
+fn taken_since(id: i32, at: u64) -> bool {
+    at > 0 && std::fs::read_to_string(format!("{}/{id}.taken", crate::term::socket_dir())).ok().and_then(|t| t.trim().parse::<u64>().ok()).is_some_and(|t| t >= at)
 }
 
 /// Answers a question on that terminal: an option by its number or its
@@ -1214,6 +1244,19 @@ mod tests {
         for k in ["CODEX_HOME", "CLAUDE_CONFIG_DIR", "ANTHROPIC_API_KEY", "PATH"] {
             assert!(!agent_marker(k), "{k}");
         }
+    }
+
+    #[test]
+    fn claude_codes_box_is_empty_only_with_nothing_after_its_prompt() {
+        let rule = "────────────────────────────────────────";
+        let empty = format!("● working…\n{rule}\n❯ \n{rule}\n  ⏵⏵ auto mode on");
+        assert!(claude_box_empty(&empty));
+        let typing = format!("● working…\n{rule}\n❯ half a sentence\n{rule}\n  ⏵⏵ auto mode on");
+        assert!(!claude_box_empty(&typing));
+        // Several lines being written: the last `❯` is the box's, with text.
+        let lines = format!("{rule}\n❯ first line\n  second line\n{rule}");
+        assert!(!claude_box_empty(&lines));
+        assert!(!claude_box_empty("no box here"));
     }
 
     #[test]
