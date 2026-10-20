@@ -38,7 +38,7 @@ the open windows without closing anything.
 
 # What's new
 
-- **Wires: agents that work together** (0.4.6): on a free monitor, drag the drop at
+- **Wires: agents that work together** (0.5): on a free monitor, drag the drop at
   the start of a window's title bar to another window and the two are wired
   —a current of water between them; the mouse over its middle names it («tests», «frontend») or cuts it—. Tiled, wires stay: each window says in the gap above it what it is wired to, and the ones wired to the window under the mouse light up. The
   wire is the person's word: an agent in one terminal (Claude Code, Codex,
@@ -53,14 +53,14 @@ the open windows without closing anything.
   whether it works, is ready or waits for you (its edge goes amber); zoomed
   out, a canvas shows it big over each window, and one waiting out of sight
   leaves a drop at the monitor's edge that takes the camera there.
-- **The canvas comes back** (0.4.6): while a session runs, its terminals on
+- **The canvas comes back** (0.5): while a session runs, its terminals on
   free monitors are kept —their program, their folder, the agent in each,
   their place on the plane—, with the wires between them and each camera.
   The next session offers «Bring back your canvas»: each terminal opens
   again in its folder and place, its agent starts again on its last
   conversation (`claude --continue`, `codex resume --last`), and the wires
   are drawn again with their names. Kept in `~/.local/state/pleamar-wm`.
-- **Agents that know about wires** (0.4.6): `pleamar-wm link setup` (it says
+- **Agents that know about wires** (0.5): `pleamar-wm link setup` (it says
   what it changes and asks) installs a skill for Claude Code and Codex,
   registers `pleamar-wm link mcp` as their MCP server —tools of their own
   (`link_delegate`, `link_ask`, `link_answer`, `link_spawn`…), and on start
@@ -68,7 +68,7 @@ the open windows without closing anything.
   Claude Code's hooks, which tell its terminal exactly how it is and its last
   answer. `link spawn codex "TASK"` opens a terminal with that agent beside
   yours, wired, and hands it the task. `link setup --undo` takes it away.
-- **Every terminal readable and writable from outside** (0.4.6): in a session,
+- **Every terminal readable and writable from outside** (0.5): in a session,
   the terminals it starts —kitty, Alacritty, foot, Konsole, any that runs
   `$SHELL`— run the user's shell through a thin layer of pleamar-wm's own,
   which passes everything through untouched and keeps what is on the screen.
@@ -79,7 +79,7 @@ the open windows without closing anything.
   What runs inside knows its terminal by `PLEAMAR_TERMINAL`. A command run
   with `$SHELL -c`, or anything not on a terminal, gets the shell as it is;
   `terminals off` in session.conf leaves them all as they are.
-- **Free is a canvas** (0.4.6): a free monitor's windows live on a plane with
+- **Free is a canvas** (0.5): a free monitor's windows live on a plane with
   no edges, seen through a camera, as an infinite whiteboard of windows. Super
   and a drag on the empty plane to move about, the wheel (or Super and the wheel, over a
   window) to come closer or go further right where the pointer is, `Super+0`
@@ -88,6 +88,13 @@ the open windows without closing anything.
   takes its side, or against the monitor's edge and it takes that half or
   quarter of what is seen. `Super+W` as ever; also the last tile of the
   layouts strip, the control centre, or `layout DP-3 free` in session.conf.
+- **A shore that behaves as you say** (0.5): the control centre has a Dock page
+  —hidden until the mouse touches its edge (windows take its room meanwhile),
+  magnified under the mouse as macOS's, without the drops under open programs,
+  windows put away into their icon, four sizes, and its edge: bottom, left or
+  right—, applied at once and kept in session.conf (`dock-style`). Right click
+  on an icon: its windows, a new window, hide them, keep it or let it go, close
+  them; and while its program starts, the icon hops.
 - **Eight layouts, and one control centre to pick them** (0.4): to the leader,
   columns, rows and grid come **scrolling** (as niri: columns on a strip that
   glides to the one with the keyboard), **marea** (the one with the keyboard
