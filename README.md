@@ -38,6 +38,63 @@ the open windows without closing anything.
 
 # What's new
 
+- **Wires: agents that work together** (0.5): on a free monitor, drag the drop at
+  the start of a window's title bar to another window and the two are wired
+  —a current of water between them; the mouse over its middle names it («tests», «frontend») or cuts it—. Tiled, wires stay: each window says in the gap above it what it is wired to, and the ones wired to the window under the mouse light up. The
+  wire is the person's word: an agent in one terminal (Claude Code, Codex,
+  any with a shell) may then read the other, type in it and hand it tasks
+  with `pleamar-wm link`: `whoami`, `list`, `label N NAME`, `read N`, `send N TEXT --enter`,
+  `keys N enter`, `wait N`, `ask N` and `answer N 2` —what the agent there asks its person (a permission, a choice, a yes/no) and an answer to it, by number, by the words of an option or as free words where it lets you type; the window says who answered—, and `delegate N TASK` —the task goes in as a
+  paste with a line that says where it comes from, a drop of light runs
+  along the wire while it is worked on, and the answer comes back: printed
+  with `--wait`, or typed into the asking agent's terminal when it is done; a
+  question it stops to ask on the way comes back the same way—.
+  Each window with an agent says in its title bar what it is and where, and
+  whether it works, is ready or waits for you (its edge goes amber); zoomed
+  out, a canvas shows it big over each window, and one waiting out of sight
+  leaves a drop at the monitor's edge that takes the camera there.
+- **The canvas comes back** (0.5): while a session runs, its terminals on
+  free monitors are kept —their program, their folder, the agent in each,
+  their place on the plane—, with the wires between them and each camera.
+  The next session offers «Bring back your canvas»: each terminal opens
+  again in its folder and place, its agent starts again on its last
+  conversation (`claude --continue`, `codex resume --last`), and the wires
+  are drawn again with their names. Kept in `~/.local/state/pleamar-wm`.
+- **Agents that know about wires** (0.5): `pleamar-wm link setup` (it says
+  what it changes and asks) installs a skill for Claude Code and Codex,
+  registers `pleamar-wm link mcp` as their MCP server —tools of their own
+  (`link_delegate`, `link_ask`, `link_answer`, `link_spawn`…), and on start
+  they are told which window they are and what is wired to them— and adds
+  Claude Code's hooks, which tell its terminal exactly how it is and its last
+  answer. `link spawn codex "TASK"` opens a terminal with that agent beside
+  yours, wired, and hands it the task. `link setup --undo` takes it away.
+- **Every terminal readable and writable from outside** (0.5): in a session,
+  the terminals it starts —kitty, Alacritty, foot, Konsole, any that runs
+  `$SHELL`— run the user's shell through a thin layer of pleamar-wm's own,
+  which passes everything through untouched and keeps what is on the screen.
+  `pleamar-wm term list` shows them (which window, what runs in each: an
+  agent such as Claude Code, and whether it works or waits for you, its
+  folder); `term read ID`, `term paste ID TEXT`, `term keys ID enter` read
+  and type in one, wherever it is and whether it has the keyboard or not.
+  What runs inside knows its terminal by `PLEAMAR_TERMINAL`. A command run
+  with `$SHELL -c`, or anything not on a terminal, gets the shell as it is;
+  `terminals off` in session.conf leaves them all as they are.
+- **Free is a canvas** (0.5): a free monitor's windows live on a plane with
+  no edges, seen through a camera, as an infinite whiteboard of windows. Super
+  and a drag on the empty plane to move about, the wheel (or Super and the wheel, over a
+  window) to come closer or go further right where the pointer is, `Super+0`
+  to see them all. Each program keeps its own size and is shown smaller when
+  the camera is further away; let a window go near another one's edge and it
+  takes its side, or against the monitor's edge and it takes that half or
+  quarter of what is seen. `Super+W` as ever; also the last tile of the
+  layouts strip, the control centre, or `layout DP-3 free` in session.conf.
+- **A shore that behaves as you say** (0.5): the control centre has a Dock page
+  —hidden until the mouse touches its edge (windows take its room meanwhile),
+  magnified under the mouse as macOS's, without the drops under open programs,
+  windows put away into their icon, four sizes, and its edge: bottom, left or
+  right—, applied at once and kept in session.conf (`dock-style`). Right click
+  on an icon: its windows, a new window, hide them, keep it or let it go, close
+  them; and while its program starts, the icon hops.
 - **Eight layouts, and one control centre to pick them** (0.4): to the leader,
   columns, rows and grid come **scrolling** (as niri: columns on a strip that
   glides to the one with the keyboard), **marea** (the one with the keyboard
@@ -102,9 +159,13 @@ Every release, with what changed: [Releases].
   and rings the water, and goes to its window (the next one, pressed again) or
   starts the program. Its name shows over it; held a moment, its windows rise
   from the water as live previews; a coral drop says what is unread (Marea tells
-  it); a file dropped on it opens with it. Right click: keep it on the shore or
-  let it go, and close its windows; drag it out of the shore and it bursts into
-  drops, unpinned (`session.conf` keeps what you pin).
+  it); a file dropped on it opens with it; while a program starts, its icon
+  hops. Right click: its windows to pick, a new window, hide them, keep it on
+  the shore or let it go, and close its windows; drag it out of the shore and it
+  bursts into drops, unpinned (`session.conf` keeps what you pin). The control
+  centre's Dock page says how it behaves —hidden until the mouse touches its
+  edge, magnified, without the drops, windows put away into their icon, its
+  size, and its edge: bottom, left or right— (`dock-style …` in session.conf).
 - **Windows fill like a tank**: a window that opens appears where it goes and
   the water comes up inside it, a wavy line with a bright edge, until in a
   quarter of a second it is the window. One that closes drains the same way.
@@ -260,7 +321,7 @@ never writes over what is there:
 ```
 
 `keys.conf` binds keys to the window manager's actions —the events its scene
-declares: `close`, `minimize`, `toggle_free`, `toggle_float` (Super+V: only the
+declares: `close`, `minimize`, `toggle_free`, `canvas_fit`, `toggle_float` (Super+V: only the
 window with the keyboard floats over the tiles), `maximize` (tiled, it takes all
 of its monitor —bars and gaps kept— over the others, and goes back to its tile;
 no key of its own: `bind Super+m maximize` as Hyprland's `fullscreen 1`),
@@ -296,11 +357,13 @@ pointer accel flat
 touchpad tap on natural on
 idle off-after 600                          # the monitors go dark
 dock kitty zen-browser org.telegram.desktop   # pinned to the shore of free monitors
+dock-style hide off magnify on side bottom  # how it behaves (the control centre's Dock page)
 window app=pavucontrol float size 820x560   # what some windows do when they open
 window app=discord workspace 3 monitor 1
 window title="Picture in Picture" float     # `*` for anything: app=org.gnome.*
 window app=org.keepassxc.KeePassXC private  # pixelated when a whole screen is shared
 window app=zen frame=own                    # it draws its own title bar (its tabs up there)
+terminals off                               # the terminals' shells as they are (see below)
 ```
 
 In the login screen (SDDM, GDM): `pleamar-update --session` puts «pleamar-wm»
@@ -331,14 +394,15 @@ The ones that come with it (`pleamar-wm keys` prints them all), as on Hyprland:
 | `Super+Q` | close the one with the keyboard (it goes at once) |
 | `Super+M` · `Super+Shift+M` | put it away into Marea · bring the last one back |
 | `Super+W` | tiled or free windows on this monitor |
+| `Super+0` | free (a canvas): all of its windows in sight |
 | `Super+F` | fullscreen |
 | `Super+Tab` | everything at a glance |
 | `Super+1…9` · `Super+Shift+1…9` | show that workspace · send the window there |
 | `Super+Ctrl+Left/Right` | the workspace beside |
 | `Super+arrows` | the keyboard to the window that way (any layout, any monitor) |
 | `Super+Shift+arrows` | lead, move to the other monitor, change places |
-| `Super+-` · `Super++` | the leader (scrolling: the columns) narrower / wider; fractal: zoom out / in |
-| `Super+wheel` | fractal: zoom in and out where the pointer is; scrolling: along the columns |
+| `Super+-` · `Super++` | the leader (scrolling: the columns) narrower / wider; fractal and canvas: zoom out / in |
+| `Super+wheel` | fractal and canvas: zoom in and out where the pointer is; scrolling: along the columns |
 | `Super+I` | the control centre: each monitor's layout, what each key does |
 | `Super+Space` · `Super+L` | Marea's search · lock |
 | `Super+Shift+A` | talk with Marea (her chat, which can use the desktop for you) |

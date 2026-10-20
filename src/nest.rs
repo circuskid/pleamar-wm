@@ -160,6 +160,12 @@ enum Waits {
     /// Marea), or a window the scene lays out on it.
     Panel(usize),
     Window(usize),
+    /// A program's own surface kept off the screen (`agent hide`, a
+    /// creation's place): not told until it is shown again, as a compositor
+    /// tells nothing to what it does not show —its program draws for nobody
+    /// meanwhile, and a pleamar scene with another surface shown hands it the
+    /// pace—.
+    Hidden(u64),
 }
 
 /// A program's window: a Wayland one (xdg-shell), or an X11 one (XWayland).
@@ -881,16 +887,27 @@ fn run(max: usize, to_render: Sender<ToRender>, rx: Channel<ToNest>, ready: std:
     // its launcher): this process may not have it in its own environment.
     pleamar::set_child_env("WAYLAND_DISPLAY", Some(&socket));
     pleamar::set_child_env("DISPLAY", None);
+    // A terminal it starts runs the user's shell through a layer of this
+    // program (term.rs), which lets windows wired to it read and type in it.
+    if let Some((link, real)) = crate::term::session_shell() {
+        pleamar::set_child_env("SHELL", Some(link));
+        pleamar::set_child_env("PLEAMAR_REAL_SHELL", Some(real));
+    }
     let _ = state.to_render.send(ToRender::Nest(NestEvent::Socket(socket)));
     // What the dock has pinned (`dock …` in session.conf).
     let pins = crate::config::get().dock.iter().map(|w| crate::desktop::pin(w)).collect();
     let _ = state.to_render.send(ToRender::Nest(NestEvent::Dock(pins)));
-    // How each monitor starts (`layout …` in session.conf): its layout, or free.
-    // And its name, for whoever sets that from outside (the control centre).
+    // And how it behaves (`dock-style …`).
+    for (name, v) in crate::config::get().dock_style.facts() {
+        let _ = state.to_render.send(ToRender::ExternalFact(pleamar::scene::intern(name), v));
+    }
+    // How each monitor starts (`layout …` in session.conf): its layout, or
+    // free (a canvas; `canvas` says the same). And its name, for whoever sets
+    // that from outside (the control centre).
     for (k, m) in monitors.iter().enumerate().take(4) {
         let _ = state.to_render.send(ToRender::Text(pleamar::scene::intern(&format!("monname.{k}")), m.name.clone()));
         let Some(l) = crate::config::get().layout_of(&m.name) else { continue };
-        let free = l == crate::config::LAYOUTS.len() - 1;
+        let free = l >= crate::config::FREE;
         if !free {
             let _ = state.to_render.send(ToRender::ExternalFact(pleamar::scene::intern(&format!("lay.{k}")), l.to_string()));
         }
@@ -903,6 +920,20 @@ fn run(max: usize, to_render: Sender<ToRender>, rx: Channel<ToNest>, ready: std:
         write_control_entry();
     }
     let _ = ready.send(Some(()));
+    // Which process each window is, for `pleamar-wm link` (`windows`, next to
+    // the desktop file), every second; and what runs in the terminals among
+    // them, for the scene (term.rs: their agent and its state).
+    if !monitors.is_empty() {
+        use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
+        let _ = state.handle.insert_source(Timer::from_duration(std::time::Duration::from_secs(1)), |_, _, state| {
+            state.write_windows();
+            TimeoutAction::ToDuration(std::time::Duration::from_secs(1))
+        });
+        let file = format!("{}/windows", std::path::Path::new(&desktop_file_of(&state.socket)).parent().map(|p| p.display().to_string()).unwrap_or_default());
+        crate::term::watch_agents(file.clone(), state.to_render.clone());
+        // And the canvas kept from one session to the next (keep.rs).
+        crate::keep::start(file, state.to_render.clone());
+    }
     // A session of its own starts what the desktop has (the wallpaper, Marea):
     // `PLEAMAR_WM_AUTOSTART`, or ~/.config/pleamar/autostart, one command a
     // line. The same file `pleamar --autostart` runs on another compositor;
@@ -1442,6 +1473,14 @@ impl State {
     /// A window asks to be carried (1) or stretched (2) by its edges, from
     /// its own frame: the scene does it while the button is down.
     pub(crate) fn hold(&mut self, slot: usize, how: u32, edges: u32) {
+        // Only while it is: a quick click on its title bar is let go before
+        // the program's ask comes, and the window then went with the mouse,
+        // no button down, until the next click (carried somewhere, or
+        // stretched to wherever the desktop was clicked).
+        if !self.pointer.is_grabbed() {
+            println!("windows · window {slot} asked to be {} with the button already let go: not", if how == 1 { "carried" } else { "stretched" });
+            return;
+        }
         if let Some(before) = self.held.replace(slot).filter(|s| *s != slot) {
             self.tell(NestEvent::Held { slot: before, how: 0, edges: 0 });
         }
@@ -1631,6 +1670,12 @@ impl State {
         }
         // Nor Hyprland's: a program that asks it things would get another desktop's answers.
         c.env_remove("HYPRLAND_INSTANCE_SIGNATURE");
+        // Its terminals, through the layer (term.rs); not as the terminal
+        // this session may have been started from.
+        if let Some((link, real)) = crate::term::session_shell() {
+            c.env("SHELL", link).env("PLEAMAR_REAL_SHELL", real);
+        }
+        c.env_remove("PLEAMAR_TERMINAL").env_remove("PLEAMAR_TTY");
         // In a session of its own, the scenes it starts (Marea) listen apart
         // from the ones of another desktop of the same user that may be open.
         // And the window manager's scene is there as `wm`: Marea switches it
@@ -1803,6 +1848,28 @@ impl State {
         }
         let _ = std::fs::write(file, &text);
         *written = text;
+    }
+
+    /// The windows and their processes (`slot pid<TAB>title`), for `pleamar-wm
+    /// link`: written when something changed.
+    fn write_windows(&self) {
+        let mut text = String::new();
+        for (slot, w) in self.slots.iter().enumerate() {
+            if let Some(w) = w {
+                text.push_str(&format!("{slot} {}\t{}\n", self.pid_of(slot), w.title.replace(['\t', '\n'], " ")));
+            }
+        }
+        static WRITTEN: Mutex<Option<String>> = Mutex::new(None);
+        let mut written = WRITTEN.lock().unwrap();
+        if written.as_deref() == Some(text.as_str()) {
+            return;
+        }
+        let file = desktop_file_of(&self.socket);
+        if let Some(dir) = std::path::Path::new(&file).parent() {
+            let _ = std::fs::create_dir_all(dir);
+            let _ = std::fs::write(dir.join("windows"), &text);
+        }
+        *written = Some(text);
     }
 
     /// A monitor was plugged in or out: the outputs follow, by name. What was
@@ -2277,6 +2344,13 @@ impl State {
     pub(super) fn agent_hide_layer(&mut self, id: u64, hide: bool) -> Result<(), &'static str> {
         let k = self.panels.iter().position(|p| p.id == id && matches!(p.shell, Shell::Layer(_))).ok_or("target-not-found")?;
         self.panels[k].hidden = hide;
+        // Back: what it asked meanwhile waits for its monitor's next frame.
+        if !hide {
+            let monitor = self.panels[k].monitor;
+            for (_, waits) in self.callbacks.iter_mut().filter(|(_, w)| *w == Waits::Hidden(id)) {
+                *waits = Waits::Panel(monitor);
+            }
+        }
         self.show_panel(k);
         self.tell_reserved();
         Ok(())
@@ -2424,7 +2498,7 @@ impl State {
             let now = match *waits {
                 Waits::Scene => true,
                 Waits::Panel(m) => Some(m) == monitor,
-                Waits::Window(_) => false,
+                Waits::Window(_) | Waits::Hidden(_) => false,
             };
             if now {
                 cb.done(t);
@@ -2486,7 +2560,7 @@ impl State {
             .filter_map(|(_, waits)| match *waits {
                 Waits::Scene => Some(self.refresh_of(None).saturating_sub(self.answered_at.elapsed())),
                 Waits::Window(m) => Some(self.beat_due_in(m)),
-                Waits::Panel(_) => None,
+                Waits::Panel(_) | Waits::Hidden(_) => None,
             })
             .min()
     }
@@ -2517,7 +2591,7 @@ impl State {
             let now = match *waits {
                 Waits::Scene => scene_due,
                 Waits::Window(m) => windows_due(m),
-                Waits::Panel(_) => false,
+                Waits::Panel(_) | Waits::Hidden(_) => false,
             };
             if now {
                 cb.done(t);
@@ -2547,9 +2621,14 @@ impl State {
         let t = self.time();
         self.answered_at = Instant::now();
         self.awaiting_paint = None;
-        for (cb, _) in self.callbacks.drain(..) {
-            cb.done(t);
-        }
+        // (Not what is kept off the screen: that waits until it is shown.)
+        self.callbacks.retain(|(cb, waits)| {
+            let hidden = matches!(waits, Waits::Hidden(_));
+            if !hidden {
+                cb.done(t);
+            }
+            hidden
+        });
         self.presentation_done();
     }
 
@@ -2635,9 +2714,10 @@ impl State {
         // X11 says whose it is before it is shown (Wayland, later: `parent_changed`).
         self.beside_parent(slot);
         // Not one the agent opened, nor one of the program it is working with
-        // while your keyboard is in another (a dialog its click opened).
+        // while your keyboard is in another (a dialog its click opened), nor
+        // a terminal opened for an agent beside its own (`link spawn`).
         let parent_pid = self.parent_slot(slot).map_or(0, |p| self.pid_of(p));
-        if opened.is_none() && !self.agent_keeps_your_keyboard(pid) && !self.agent_keeps_your_keyboard(parent_pid) {
+        if opened.is_none() && !self.agent_keeps_your_keyboard(pid) && !self.agent_keeps_your_keyboard(parent_pid) && !crate::term::started_quiet(pid) {
             let before = self.focus;
             self.set_focus(Some(slot));
             self.focus_given = Some((slot, before, Instant::now()));
@@ -3269,6 +3349,7 @@ impl CompositorHandler for State {
             root = p;
         }
         let waits = match self.panels.iter().find(|p| p.shell.wl_surface() == &root) {
+            Some(p) if p.hidden => Waits::Hidden(p.id),
             Some(p) => Waits::Panel(p.monitor),
             None => match self.slots.iter().flatten().find(|w| w.surface == root) {
                 Some(w) => Waits::Window(w.screen),

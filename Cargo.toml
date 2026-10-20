@@ -18,6 +18,10 @@ default-members = ["."]
 [dependencies]
 pleamar = { path = "../pleamar" }
 libc = "0.2"
+# The terminals' layer (term.rs): what is on a terminal's screen, kept as it would show it.
+vt100 = "0.18"
+# `pleamar-wm link mcp` (the MCP protocol) and `link setup` (an agent's settings): JSON.
+serde_json = { version = "1", features = ["preserve_order"] }
 # The checksums of a zip of files sent to the remote page.
 crc32fast = "1"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }

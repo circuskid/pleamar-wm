@@ -16,7 +16,7 @@ local function shown(k, l)
     text["now." .. k] = l >= 0 and ("now " .. SHOWN[l + 1]) or ""
 end
 
--- Each monitor's name, and its layout now (free counts first).
+-- Each monitor's name, and its layout now (free counts first: a canvas).
 local function look()
     for k = 0, 3 do
         wm({ "--say", "wm", "get monname." .. k }, function(name, code)
@@ -34,10 +34,55 @@ local function look()
     end
 end
 
+-- ── Dock: how the shore of free monitors behaves (`dock-style …`) ──
+-- Read from the session; a change applies there at once (`fact dock.hide 1`)
+-- and is written in session.conf (`pleamar-wm config set dock hide on`).
+local DOCK = { "hide", "magnify", "dots", "into", "size", "side" }
+local FACT = { "dock.hide", "dock.mag", "dock.dots", "dock.into", "dock.size", "dock.side" }
+local MINE = { "d.hide", "d.mag", "d.dots", "d.into", "d.size", "d.side" }
+local SIDES = { [0] = "bottom", [1] = "left", [2] = "right" }
+local SAID = {
+    "Hiding the dock", "Magnification", "Drops under open programs", "Windows put away into their icon", "The dock's size", "The dock's place",
+}
+
+local function dock_look()
+    for i = 1, #FACT do
+        wm({ "--say", "wm", "get " .. FACT[i] }, function(v, code)
+            local n = tonumber(v)
+            if code == 0 and n then fact[MINE[i]] = n end
+        end)
+    end
+end
+
+on("dk", function(v)
+    local k, x = v // 100, v % 100
+    local i = k + 1
+    if not DOCK[i] then return end
+    local value
+    if k <= 3 then
+        value = x == 1 and "on" or "off"
+    elseif k == 4 then
+        value = tostring(x)
+    else
+        value = SIDES[x]
+    end
+    if not value then return end
+    fact[MINE[i]] = x
+    -- At once, there…
+    wm({ "--say", "wm", "fact " .. FACT[i] .. " " .. x })
+    -- …and for the next session.
+    wm({ "config", "set", "dock", DOCK[i], value }, function(out, code)
+        local what = k <= 3 and (SAID[i] .. (x == 1 and " on" or " off")) or (SAID[i] .. ": " .. value)
+        text.toast = code == 0 and (what .. ", from now on") or ("Not saved: " .. out)
+        fact.toasted = fact.toasted + 1
+    end)
+end)
+
 local open_build = nil   -- the Build page, below: wakes its engine up
 on("go", function(page)
     fact.page = page
     if page == 3 and open_build then open_build() end
+    if page == 4 then dock_look() end
 end)
 
 on("pick", function(v)
@@ -60,6 +105,7 @@ end)
 
 wm({ "--version" }, function(out) text.version = out ~= "" and out or "pleamar-wm" end)
 look()
+dock_look()
 -- A layout picked from the strip, or with Super+W, shows here too.
 every(2000, look)
 
@@ -157,7 +203,10 @@ end
 open_build = function()
     conf(function() start_engine(); if engine then say({ type = "models" }) end end)
 end
-on("fact:page", function(p) if p == 3 then open_build() end end)
+on("fact:page", function(p)
+    if p == 3 then open_build() end
+    if p == 4 then dock_look() end
+end)
 on("b_login", function(k)
     local p = PROVIDERS[(tonumber(k) or -1) + 1]
     if not p then return end
