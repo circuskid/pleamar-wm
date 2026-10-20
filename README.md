@@ -358,6 +358,7 @@ touchpad tap on natural on
 idle off-after 600                          # the monitors go dark
 dock kitty zen-browser org.telegram.desktop   # pinned to the shore of free monitors
 dock-style hide off magnify on side bottom  # how it behaves (the control centre's Dock page)
+blur passes 4 noise 0.02 saturation 1.2       # behind a panel or a menu that asks for it (dual Kawase)
 window app=pavucontrol float size 820x560   # what some windows do when they open
 window app=discord workspace 3 monitor 1
 window title="Picture in Picture" float     # `*` for anything: app=org.gnome.*

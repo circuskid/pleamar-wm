@@ -90,6 +90,9 @@ pub struct Config {
     /// How that dock behaves: `dock-style hide on magnify off dots on into
     /// off size 44 side bottom` (the control centre writes it).
     pub dock_style: DockStyle,
+    /// What a program's surface that asks for it (ext-background-effect) has
+    /// behind it: `blur passes 3 offset 1 noise 0.02 saturation 1.2 brightness 0.9`.
+    pub blur: Blur,
     pub keyboard: Keyboard,
     pub pointer: Pointing,
     pub touchpad: Pointing,
@@ -189,6 +192,45 @@ impl DockStyle {
             DockSide::Right => 2,
         };
         [("dock.hide", b(self.hide)), ("dock.mag", b(self.magnify)), ("dock.dots", b(self.dots)), ("dock.into", b(self.into)), ("dock.size", self.size.to_string()), ("dock.side", side.to_string())]
+    }
+}
+
+/// The blur behind a program's surface that asks for it: dual Kawase, as most
+/// compositors do it (each pass halves what is behind, and as many come back
+/// up), and then a grain and its colour.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Blur {
+    /// How many times it is halved (1 to 6): the more, the wider.
+    pub passes: u32,
+    /// How far each pass reaches, in pixels of its own (0.5 to 8).
+    pub offset: f32,
+    /// A grain over it, so it does not band (0 to 0.5).
+    pub noise: f32,
+    /// 0 grey, 1 as it was, more, more vivid (0 to 3).
+    pub saturation: f32,
+    /// 1 as it was; less, darker (0 to 3).
+    pub brightness: f32,
+}
+
+impl Default for Blur {
+    fn default() -> Self {
+        Blur { passes: 3, offset: 1.0, noise: 0.0, saturation: 1.0, brightness: 1.0 }
+    }
+}
+
+impl Blur {
+    /// One of its settings, from words (`passes 4`, `noise 0.02`).
+    pub fn set(&mut self, k: &str, v: Option<&String>) -> Result<(), String> {
+        let number = |range: std::ops::RangeInclusive<f32>| v.and_then(|v| v.parse::<f32>().ok()).filter(|n| range.contains(n)).ok_or(format!("`{k} N`, {} to {}", range.start(), range.end()));
+        match k {
+            "passes" => self.passes = number(1.0..=6.0)?.round() as u32,
+            "offset" => self.offset = number(0.5..=8.0)?,
+            "noise" => self.noise = number(0.0..=0.5)?,
+            "saturation" => self.saturation = number(0.0..=3.0)?,
+            "brightness" => self.brightness = number(0.0..=3.0)?,
+            _ => return Err(format!("the blur has no '{k}': passes, offset, noise, saturation, brightness")),
+        }
+        Ok(())
     }
 }
 
@@ -533,6 +575,11 @@ pub fn parse(text: &str, c: &mut Config) {
                     eprintln!("config · line {}: {e}", n + 1);
                 }
             }),
+            "blur" => pairs(&mut |k, v| {
+                if let Err(e) = c.blur.set(k, v) {
+                    eprintln!("config · line {}: {e}", n + 1);
+                }
+            }),
             "window" => {
                 let mut r = WindowRule::default();
                 let mut k = 0;
@@ -803,6 +850,18 @@ mod tests {
         assert_eq!(c.repeat(), (30, 400));
         assert_eq!(c.touchpad.tap, Some(true));
         assert_eq!(c.off_after, Some(600));
+    }
+
+    #[test]
+    fn the_blur_line_sets_what_it_says_and_leaves_the_rest() {
+        let mut c = Config::default();
+        parse("blur passes 5 noise 0.03 saturation 1.4", &mut c);
+        assert_eq!(c.blur, Blur { passes: 5, noise: 0.03, saturation: 1.4, ..Blur::default() });
+        // Out of its range, or a word it does not know: said, and left as it was.
+        let mut b = Blur::default();
+        assert!(b.set("passes", Some(&"9".to_owned())).is_err());
+        assert!(b.set("glow", Some(&"1".to_owned())).is_err());
+        assert_eq!(b, Blur::default());
     }
 
     #[test]

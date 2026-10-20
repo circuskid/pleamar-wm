@@ -22,6 +22,12 @@
 # the icons' size (32 to 72), and its edge: bottom, left or right.
 #dock-style hide off magnify off dots on into off size 44 side bottom
 
+# The blur behind a panel, a bar or a menu that asks for it (dual Kawase):
+# passes 1-6 (how wide), offset 0.5-8 (how far each pass reaches), noise
+# 0-0.5 (a grain, so it does not band), saturation 0-3 and brightness 0-3
+# (1, as it is behind).
+#blur passes 3 offset 1 noise 0 saturation 1 brightness 1
+
 # How a monitor starts: one of leader, columns, rows, grid, leader-right,
 # scrolling (as niri), marea (the one used most is widest), fractal (split and
 # split again, and zoom), or free (each window where it is left). `*` for every
