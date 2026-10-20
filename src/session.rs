@@ -192,8 +192,8 @@ impl Output for DrmOutput {
                     if sdr.is_err() {
                         sdr = set_sdr(&self.drm, self.connector, &self.name);
                     }
-                    if config::get().monitor(&self.name).is_some_and(|r| r.vrr) {
-                        set_vrr(&self.drm, self.connector, self.crtc, &self.name);
+                    if vrr_wanted(&self.name) {
+                        let _ = set_vrr(&self.drm, self.connector, self.crtc, &self.name, true);
                     }
                 }
                 Err(e) => eprintln!("session · {}: the monitor did not take its first frame: {e}", self.name),
@@ -449,6 +449,17 @@ fn run(surfaces: Vec<Surface>, to_render: Sender<ToRender>) -> Result<(), String
             }
         })
         .map_err(|e| e.to_string())?;
+    // A monitor changed while it runs, as `pleamar-wm output` asks (output.rs).
+    let (output_tx, output_rx) = smithay::reexports::calloop::channel::channel::<crate::output::Asked>();
+    crate::output::set_sink(Box::new(move |asked| output_tx.send(asked).is_ok()));
+    event_loop
+        .handle()
+        .insert_source(output_rx, |event, _, state: &mut State| {
+            if let smithay::reexports::calloop::channel::Event::Msg((name, wish, answer)) = event {
+                let _ = answer.send(state.apply_output(&name, &wish));
+            }
+        })
+        .map_err(|e| e.to_string())?;
     // A phone's fingers on its glass (`pleamar-wm remote`): what is under the
     // pointer moves with them, as with a touchpad's here.
     let (fingers_tx, fingers_rx) = smithay::reexports::calloop::channel::channel::<layers::Fingers>();
@@ -521,15 +532,49 @@ fn property(drm: &DrmDeviceFd, object: impl smithay::reexports::drm::control::Re
 
 /// Variable refresh, if the monitor can: the screen waits for the frame
 /// instead of the frame for the screen (a game that does not reach 165).
-fn set_vrr(drm: &DrmDeviceFd, conn: connector::Handle, crtc: crtc::Handle, name: &str) {
-    if property(drm, conn, "vrr_capable").is_none_or(|(_, v)| v == 0) {
-        println!("session · {name}: it cannot vary its refresh (vrr)");
-        return;
-    }
-    match property(drm, crtc, "VRR_ENABLED").map(|(h, _)| drm.set_property(crtc, h, 1)) {
-        Some(Ok(())) => println!("session · {name}: variable refresh on"),
-        _ => eprintln!("session · {name}: variable refresh could not be turned on"),
-    }
+/// Turned on or off: what was done, or why not.
+fn set_vrr(drm: &DrmDeviceFd, conn: connector::Handle, crtc: crtc::Handle, name: &str, on: bool) -> Result<String, String> {
+    let word = if on { "on" } else { "off" };
+    let enabled = property(drm, crtc, "VRR_ENABLED");
+    let change = crate::output::vrr_change(name, property(drm, conn, "vrr_capable").map(|(_, v)| v), enabled.map(|(_, v)| v), on);
+    let done = match (change, enabled) {
+        (Err(why), _) => {
+            println!("session · {why}");
+            return Err(why);
+        }
+        (Ok(None), _) => format!("{name}: variable refresh {word}"),
+        (Ok(Some(v)), Some((h, _))) => match drm.set_property(crtc, h, v) {
+            Ok(()) => format!("{name}: variable refresh {word}"),
+            Err(e) => {
+                let why = format!("{name}: variable refresh could not be turned {word}: {e}");
+                eprintln!("session · {why}");
+                return Err(why);
+            }
+        },
+        (Ok(Some(_)), None) => unreachable!("a value to write is only given where VRR_ENABLED is"),
+    };
+    println!("session · {done}");
+    Ok(done)
+}
+
+/// What `pleamar-wm output` asked while the session runs, by monitor: it
+/// outranks the monitor's line in session.conf until the session ends, and
+/// holds for a monitor plugged in again.
+static ASKED_VRR: Mutex<Vec<(String, bool)>> = Mutex::new(Vec::new());
+static ASKED_AT: Mutex<Vec<(String, (i32, i32))>> = Mutex::new(Vec::new());
+
+fn asked<T: Copy>(list: &Mutex<Vec<(String, T)>>, name: &str) -> Option<T> {
+    list.lock().unwrap().iter().find(|(n, _)| n == name).map(|(_, v)| *v)
+}
+
+fn ask<T>(list: &Mutex<Vec<(String, T)>>, name: &str, value: T) {
+    let mut list = list.lock().unwrap();
+    list.retain(|(n, _)| n != name);
+    list.push((name.to_owned(), value));
+}
+
+fn vrr_wanted(name: &str) -> bool {
+    asked(&ASKED_VRR, name).unwrap_or_else(|| config::get().monitor(name).is_some_and(|r| r.vrr))
 }
 
 /// The monitor told the frames are what they are, SDR in sRGB: pleamar-wm
@@ -670,7 +715,7 @@ fn place_monitors(monitors: &mut [Monitor]) {
         let names: Vec<&str> = order.split(',').map(str::trim).collect();
         monitors.sort_by_key(|m| names.iter().position(|n| *n == m.name).unwrap_or(names.len()));
     }
-    let placed: Vec<Option<(i32, i32)>> = monitors.iter().map(|m| config::get().monitor(&m.name).and_then(|r| r.at)).collect();
+    let placed: Vec<Option<(i32, i32)>> = monitors.iter().map(|m| asked(&ASKED_AT, &m.name).or_else(|| config::get().monitor(&m.name).and_then(|r| r.at))).collect();
     let mut x = monitors.iter().zip(&placed).filter_map(|(m, p)| p.map(|(px, _)| px + m.units().0)).max().unwrap_or(0);
     for (m, p) in monitors.iter_mut().zip(&placed) {
         (m.x, m.y) = match p {
@@ -800,6 +845,63 @@ impl State {
             return;
         }
         self.monitors_changed();
+    }
+
+    /// One monitor changed as `pleamar-wm output` asks: all of the wish or
+    /// none of it, and what was done or why not.
+    fn apply_output(&mut self, name: &str, wish: &crate::output::Wish) -> Result<String, String> {
+        if let Some(why) = wish.not_yet() {
+            return Err(why);
+        }
+        let Some(m) = self.monitors.iter().find(|m| m.name == name) else {
+            let names: Vec<&str> = self.monitors.iter().filter(|m| m.crtc.is_some()).map(|m| m.name.as_str()).collect();
+            return Err(format!("there is no monitor {name}; there are {}", names.join(", ")));
+        };
+        let (Some(conn), Some(crtc)) = (m.connector, m.crtc) else {
+            return Err(format!("{name} is the phone's: `pleamar-wm remote` puts it where it goes"));
+        };
+        // Everything checked before anything is done.
+        if let Some((x, y)) = wish.at {
+            let boxes: Vec<(&str, [i32; 4])> = self
+                .monitors
+                .iter()
+                .filter(|o| o.crtc.is_some())
+                .map(|o| {
+                    let (w, h) = o.units();
+                    (o.name.as_str(), if o.name == name { [x, y, w, h] } else { [o.x, o.y, w, h] })
+                })
+                .collect();
+            if let Some((a, b)) = crate::output::overlapping(&boxes) {
+                return Err(format!("{a} and {b} would cover the same part of the desktop"));
+            }
+        }
+        // Variable refresh first: the one part the card can still refuse.
+        let lit = m.flips.lock().unwrap().set;
+        let mut done = Vec::new();
+        if let Some(on) = wish.vrr {
+            if lit {
+                done.push(set_vrr(&self.drm, conn, crtc, name, on)?);
+            } else {
+                if on {
+                    crate::output::vrr_change(name, property(&self.drm, conn, "vrr_capable").map(|(_, v)| v), Some(0), true)?;
+                }
+                done.push(format!("{name}: variable refresh {} once it lights", if on { "on" } else { "off" }));
+            }
+            ask(&ASKED_VRR, name, on);
+        }
+        if let Some(at) = wish.at {
+            // The others stay where they are: placed where they were, or the
+            // row left to right would close up around the one moved.
+            for o in self.monitors.iter().filter(|o| o.crtc.is_some() && o.name != name) {
+                if asked(&ASKED_AT, &o.name).is_none() && config::get().monitor(&o.name).and_then(|r| r.at).is_none() {
+                    ask(&ASKED_AT, &o.name, (o.x, o.y));
+                }
+            }
+            ask(&ASKED_AT, name, at);
+            self.monitors_changed();
+            done.push(format!("{name} at {},{}", at.0, at.1));
+        }
+        Ok(done.join("; "))
     }
 
     /// The row of monitors is new (one plugged in or out, the phone's put up

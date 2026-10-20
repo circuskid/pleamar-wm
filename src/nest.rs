@@ -882,6 +882,12 @@ fn run(max: usize, to_render: Sender<ToRender>, rx: Channel<ToNest>, ready: std:
         }
     }
     state.write_desktop();
+    // Where a monitor is asked to change (`pleamar-wm output`), beside the
+    // desktop file; a nest inside another compositor answers it has none.
+    if let Some(dir) = std::path::Path::new(&desktop_file_of(&state.socket)).parent() {
+        let _ = std::fs::create_dir_all(dir);
+        crate::output::serve(&dir.display().to_string());
+    }
     agent::start(&mut state);
     state.start_xwayland();
     state.export_environment();
