@@ -1,4 +1,5 @@
-# NixOS: pleamar-wm in the login screen, with pleamar and Marea.
+# NixOS: pleamar-wm in the login screen, with Marea; `pleamar` comes with it
+# (the package links it to the one inside pleamar-wm).
 #
 #   programs.pleamar-wm.enable = true;
 self:
@@ -28,10 +29,7 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    environment.systemPackages = [
-      cfg.package
-      self.inputs.pleamar.packages.${system}.pleamar
-    ] ++ lib.optional cfg.withMarea self.inputs.marea.packages.${system}.marea;
+    environment.systemPackages = [ cfg.package ] ++ lib.optional cfg.withMarea self.inputs.marea.packages.${system}.marea;
 
     # In the login screen's list of sessions.
     services.displayManager.sessionPackages = [ cfg.package ];
