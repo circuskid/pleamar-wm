@@ -1405,14 +1405,19 @@ impl State {
     }
 
     /// A window's states as wlr-foreign-toplevel lists them: with the
-    /// keyboard, and put away.
+    /// keyboard, put away, and over its whole monitor (a bar gets out of the
+    /// way of a film).
     fn states(&self, slot: usize) -> Vec<u8> {
         let mut out = Vec::new();
         if self.focus == Some(slot) {
             out.extend((toplevel_handle::State::Activated as u32).to_ne_bytes());
         }
-        if self.slots.get(slot).and_then(Option::as_ref).is_some_and(|w| w.minimized) {
+        let w = self.slots.get(slot).and_then(Option::as_ref);
+        if w.is_some_and(|w| w.minimized) {
             out.extend((toplevel_handle::State::Minimized as u32).to_ne_bytes());
+        }
+        if w.is_some_and(|w| w.fullscreen) {
+            out.extend((toplevel_handle::State::Fullscreen as u32).to_ne_bytes());
         }
         out
     }
@@ -1625,6 +1630,12 @@ impl State {
         w.toplevel.set_fullscreen(yes);
         self.tell(NestEvent::Fullscreen(slot, yes));
         self.tell_fullscreen();
+        for (s, h) in &self.toplevel_handles {
+            if *s == slot {
+                h.state(self.states(slot));
+                h.done();
+            }
+        }
     }
 
     fn tell_fullscreen(&self) {
