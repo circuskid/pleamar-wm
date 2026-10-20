@@ -180,6 +180,8 @@ impl Output for DrmOutput {
         }
         let fb = self.buffers[which].fb;
         if !f.set {
+            // Before the mode, so that it goes out with it.
+            set_sdr(&self.drm, self.connector, &self.name);
             match self.drm.set_crtc(self.crtc, Some(fb), (0, 0), &[self.connector], Some(self.mode)) {
                 Ok(()) => {
                     f.set = true;
@@ -487,6 +489,40 @@ fn set_vrr(drm: &DrmDeviceFd, conn: connector::Handle, crtc: crtc::Handle, name:
         Some(Ok(())) => println!("session · {name}: variable refresh on"),
         _ => eprintln!("session · {name}: variable refresh could not be turned on"),
     }
+}
+
+/// The monitor told the frames are what they are, SDR in sRGB: pleamar-wm
+/// never says otherwise, but the connector keeps what the last one to drive
+/// it said (a Hyprland session, a game in HDR), and a TV told BT.2020 by
+/// them shows these colours as if they were.
+fn set_sdr(drm: &DrmDeviceFd, conn: connector::Handle, name: &str) {
+    for prop in ["Colorspace", "HDR_OUTPUT_METADATA"] {
+        let Some((h, now)) = property(drm, conn, prop) else { continue };
+        let enums: Vec<(u64, String)> = match drm.get_property(h).map(|p| p.value_type()) {
+            Ok(smithay::reexports::drm::control::property::ValueType::Enum(e)) => {
+                let (_, list) = e.values();
+                list.iter().map(|v| (v.value(), v.name().to_string_lossy().into_owned())).collect()
+            }
+            _ => Vec::new(),
+        };
+        let Some(sdr) = sdr_value(prop, now, &enums) else { continue };
+        match drm.set_property(conn, h, sdr) {
+            Ok(()) => println!("session · {name}: {prop} {now} → {sdr} (SDR)"),
+            Err(e) => eprintln!("session · {name}: {prop} could not be set to SDR ({e}): the colours may be off"),
+        }
+    }
+}
+
+/// What a connector's property has to be for SDR, if it is not already:
+/// `Colorspace` its `Default` (by name: its number is the driver's), and no
+/// `HDR_OUTPUT_METADATA` blob at all, as wlroots leaves it outside HDR.
+fn sdr_value(prop: &str, now: u64, enums: &[(u64, String)]) -> Option<u64> {
+    let sdr = match prop {
+        "Colorspace" => enums.iter().find(|(_, n)| n == "Default")?.0,
+        "HDR_OUTPUT_METADATA" => 0,
+        _ => return None,
+    };
+    (now != sdr).then_some(sdr)
 }
 
 /// The mode asked for, among the ones the monitor has: that size at the
@@ -1441,7 +1477,7 @@ fn keep_ahead() {
 
 #[cfg(test)]
 mod tests {
-    use super::turned_point;
+    use super::{sdr_value, turned_point};
 
     /// `transform` goes the way wlroots' and Hyprland's does, anticlockwise: with
     /// 1, what is at the top left of the upright monitor is at the bottom left of
@@ -1467,5 +1503,24 @@ mod tests {
         assert_eq!(turned_point(3, there, (h, w)), p);
         let there = turned_point(3, p, (w, h));
         assert_eq!(turned_point(1, there, (h, w)), p);
+    }
+
+    /// What nvidia-drm left on an HDMI TV after Hyprland: BT2020_RGB and a
+    /// metadata blob. Both go back; what is already SDR is not written again.
+    #[test]
+    fn sdr_resets_what_was_left() {
+        let colorspace: Vec<(u64, String)> = [(0, "Default"), (9, "BT2020_RGB"), (10, "BT2020_YCC")].map(|(v, n)| (v, n.to_owned())).to_vec();
+        assert_eq!(sdr_value("Colorspace", 9, &colorspace), Some(0));
+        assert_eq!(sdr_value("Colorspace", 0, &colorspace), None);
+        assert_eq!(sdr_value("HDR_OUTPUT_METADATA", 1234, &[]), Some(0));
+        assert_eq!(sdr_value("HDR_OUTPUT_METADATA", 0, &[]), None);
+    }
+
+    /// A `Colorspace` with no `Default` is left alone, not given a guess.
+    #[test]
+    fn sdr_guesses_nothing() {
+        let odd: Vec<(u64, String)> = vec![(9, "BT2020_RGB".to_owned())];
+        assert_eq!(sdr_value("Colorspace", 9, &odd), None);
+        assert_eq!(sdr_value("max bpc", 12, &[]), None);
     }
 }
